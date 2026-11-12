@@ -195,23 +195,177 @@ def _make_id(parent_id: Optional[str], index: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Spoken text
+# Spoken text: building blocks
+#
+# Quick text depends only on the node itself, so it is written while the tree
+# is built (bottom-up). Detailed and context text need the node's children,
+# parent, sibling and side, so they are filled in by a second, top-down pass
+# (`_annotate`) that works on the finished ExplorerNode dicts.
+#
+# TEMPORARY: number/expression wording lives here because engine/speak.py
+# (Member 1) is not available yet. Numbers are spoken as digits ("negative 3"),
+# and `_phrase` is a minimal stand-in for speak.py's maths-to-words. When
+# speak.py lands, replace `_say` and `_phrase` and keep the rest.
 # ---------------------------------------------------------------------------
+
+_LEAVES = {NUMBER, VARIABLE}
+
+
+def _say(type_: str, value: Any) -> str:
+    """Plain-word value of a Number/Variable."""
+    if type_ == VARIABLE:
+        return str(value)
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return f"negative {abs(value)}" if value < 0 else str(value)
 
 
 def _say_value(node: _Ast) -> str:
-    """Plain-word value of a Number/Variable. (speak.py is not available yet.)"""
-    if node.type == VARIABLE:
-        return str(node.value)
-    value = node.value
-    if isinstance(value, float) and value.is_integer():
-        value = int(value)
-    text = str(abs(value)) if value < 0 else str(value)
-    return f"negative {text}" if value < 0 else text
+    return _say(node.type, node.value)
 
 
 def _operator_name(node: _Ast) -> str:
     return _OPERATORS[node.type][1]
+
+
+def _cap(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def _is_number_times_variable(d: dict) -> bool:
+    """Mul of a number and a variable in either order, e.g. 3x or x*3."""
+    if d["type"] != "Mul":
+        return False
+    kinds = sorted(c["type"] for c in d["children"])
+    return kinds == [NUMBER, VARIABLE]
+
+
+def _needs_group(child: dict, parent_type: str, index: int) -> bool:
+    """Would reading `child` inside `parent` without a marker be ambiguous?"""
+    ct = child["type"]
+    if ct in _LEAVES:
+        return parent_type == "Pow" and index == 0 and ct == NUMBER and child["value"] < 0
+    if parent_type in ("Neg", "Mul"):
+        return ct in _SUM_TYPES
+    if parent_type == "Sub":
+        return index == 1 and ct in _SUM_TYPES
+    if parent_type == "Div":
+        return ct in _SUM_TYPES or (index == 1 and ct in ("Mul", "Div"))
+    if parent_type == "Pow":
+        return index == 0 or ct in _SUM_TYPES | {"Mul", "Div"}
+    return False
+
+
+def _child_phrase(parent: dict, index: int) -> str:
+    """Words for one child, marked as 'the quantity ...' when grouping matters."""
+    text = _phrase(parent["children"][index])
+    if _needs_group(parent["children"][index], parent["type"], index):
+        return f"the quantity {text}"
+    return text
+
+
+def _phrase(d: dict) -> str:
+    """Spoken form of a whole sub-expression, e.g. '3x plus 5'."""
+    t = d["type"]
+    if t in _LEAVES:
+        return _say(t, d["value"])
+    if t == "Neg":
+        return f"negative {_child_phrase(d, 0)}"
+    if t == "Mul":
+        first, second = d["children"]
+        if first["type"] == NUMBER and second["type"] == VARIABLE:
+            return f"{_say(NUMBER, first['value'])}{second['value']}"
+    joiner = {
+        "Add": "plus",
+        "Sub": "minus",
+        "Mul": "times",
+        "Div": "divided by",
+        "Pow": "to the power of",
+    }[t]
+    left = _child_phrase(d, 0)
+    if t != "Pow" and d["children"][0]["type"] == "Pow":
+        # "x to the power of 2, plus 3": the pause stops the 3 sounding like
+        # part of the exponent.
+        left += ","
+    return f"{left} {joiner} {_child_phrase(d, 1)}"
+
+
+def _label(d: dict) -> str:
+    """Noun phrase naming a node by its mathematical role, with its value."""
+    t = d["type"]
+    if t == NUMBER:
+        word = {ROLE_COEFFICIENT: "coefficient", ROLE_CONSTANT: "constant"}.get(
+            d["role"], "number"
+        )
+        return f"the {word} {_say(t, d['value'])}"
+    if t == VARIABLE:
+        return f"the variable {d['value']}"
+    if t == "Neg":
+        return f"the negation of {_child_phrase(d, 0)}"
+    if t == "Mul" and _is_number_times_variable(d):
+        return f"the term {_phrase(d)}"
+    noun = {
+        "Add": "sum", "Sub": "difference", "Mul": "product",
+        "Div": "quotient", "Pow": "expression",
+    }[t]
+    return f"the {noun} {_phrase(d)}"
+
+
+def _other_child(parent: dict, index: int) -> Optional[dict]:
+    kids = parent["children"]
+    return kids[1 - index] if len(kids) == 2 else None
+
+
+def _placement(node: dict, parent: dict, index: int) -> str:
+    """Verb phrase saying what `parent` does with `node` (no subject)."""
+    ptype = parent["type"]
+    if ptype == EQUATION:
+        return f"forms the {('left', 'right')[index]} side of the equation"
+    if ptype == "Neg":
+        return "has its sign changed"
+    other = _other_child(parent, index)
+    label = _label(other)
+    if ptype == "Add":
+        return f"is added to {label}"
+    if ptype == "Sub":
+        return f"has {label} subtracted from it" if index == 0 else f"is subtracted from {label}"
+    if ptype == "Mul":
+        return f"is multiplied by {label}"
+    if ptype == "Div":
+        return f"is divided by {label}" if index == 0 else f"divides {label}"
+    # Pow. Base/exponent and "squared" wording is Phase 2.
+    if index == 0:
+        return f"is raised to the power {_child_phrase(parent, 1)}"
+    return f"is the power that {label} is raised to"
+
+
+def _operation_sentence(node: dict) -> str:
+    """'Addition. It combines ...' for an operator node."""
+    t = node["type"]
+    name = _OPERATORS[t][1]
+    kids = node["children"]
+    a = _label(kids[0])
+    if t == "Neg":
+        return f"{name}. It changes the sign of {a}."
+    b = _label(kids[1])
+    if t == "Add":
+        return f"{name}. It combines {a} and {b} by adding them."
+    if t == "Sub":
+        return f"{name}. It takes {b} away from {a}."
+    if t == "Mul":
+        text = f"{name}. It combines {a} and {b} by multiplying them."
+        if kids[0]["type"] == NUMBER and kids[1]["type"] == VARIABLE:
+            n = _say(NUMBER, kids[0]["value"])
+            return f"{text} So {_phrase(node)} means {n} times {kids[1]['value']}."
+        return text
+    if t == "Div":
+        return f"{name}. It divides {a} by {b}."
+    return f"{name}. It raises {a} to the power {_child_phrase(node, 1)}."
+
+
+# ---------------------------------------------------------------------------
+# Spoken text: quick (node only)
+# ---------------------------------------------------------------------------
 
 
 def _spoken_quick(node: _Ast, role: str) -> str:
@@ -232,38 +386,106 @@ def _spoken_quick(node: _Ast, role: str) -> str:
     return f"Number {_say_value(node)}"
 
 
-def _spoken_detailed(node: _Ast, role: str) -> str:
+# ---------------------------------------------------------------------------
+# Spoken text: detailed (what the node means)
+# ---------------------------------------------------------------------------
+
+
+def _spoken_detailed(node: dict, index: int, parent: Optional[dict]) -> str:
+    role, t = node["role"], node["type"]
     if role == ROLE_EQUATION:
-        return "The whole equation. Its left side and right side have the same value."
+        left, right = node["children"]
+        return (
+            "The whole equation. It says that the left side, "
+            f"{_phrase(left)}, has the same value as the right side, {_phrase(right)}."
+        )
     if role in (ROLE_LEFT, ROLE_RIGHT):
-        side = "left" if role == ROLE_LEFT else "right"
-        base = f"The {side} side of the equation, on the {side} of the equals sign."
-        if node.type in _OPERATORS:
-            return f"{base} {_operator_name(node)}. {_OPERATORS[node.type][2]}"
-        return f"{base} It is {_say_value(node)}."
-    if role == ROLE_COEFFICIENT:
-        n = _say_value(node)
-        return f"{n} is the coefficient. It tells you x is multiplied by {n}."
-    if role == ROLE_VARIABLE:
-        return f"{_say_value(node)} is the variable, the unknown number we want to find."
-    if role == ROLE_CONSTANT:
-        return f"{_say_value(node)} is a constant term, a number on its own that does not multiply x."
+        side, where = ("left", "before") if role == ROLE_LEFT else ("right", "after")
+        base = f"The {side} side of the equation, everything {where} the equals sign."
+        if t in _OPERATORS:
+            return f"{base} It reads {_phrase(node)}. {_operation_sentence(node)}"
+        return f"{base} It is just {_label(node)}."
     if role == ROLE_OPERATOR:
-        return f"{_operator_name(node)}. {_OPERATORS[node.type][2]}"
-    return f"{_say_value(node)} is a number."
+        return _operation_sentence(node)
 
-
-def _spoken_context(node: _Ast, ctx: _Ctx) -> str:
-    """Basic position text. Richer wording ("added to 3x") is Phase 2."""
-    if node.type == EQUATION:
-        return "This is the whole equation."
-    if ctx.is_side_root:
-        return f"This is the {ctx.side} side of the equation."
-    parent = ctx.parent
+    sibling = _other_child(parent, index) if parent is not None else None
+    if role == ROLE_COEFFICIENT:
+        n = _say(NUMBER, node["value"])
+        v = sibling["value"] if sibling else "x"
+        return (
+            f"{n} is the coefficient of {v}. It tells you {v} is multiplied by {n}, "
+            f"so the term means {n} times {v}."
+        )
+    if role == ROLE_VARIABLE:
+        text = f"{node['value']} is the variable. It stands for an unknown number, the value we want to find."
+        if sibling is not None and sibling["role"] == ROLE_COEFFICIENT:
+            text += f" Here it is multiplied by {_label(sibling)}."
+        return text
+    n = _say(NUMBER, node["value"])
+    if role == ROLE_CONSTANT:
+        text = f"{n} is a constant term: a plain number that does not multiply x."
+        if parent is not None and parent["type"] != "Neg":
+            text += f" It {_placement(node, parent, index)}."
+        elif parent is not None:
+            text += " The negation changes its sign."
+        return text
     return (
-        f"This part is on the {ctx.side} side, inside the "
-        f"{_operator_name(parent).lower()}."
+        f"{n} is a plain number here. It is not a coefficient, because it does not "
+        "multiply x, and not a constant term, because it is not added or subtracted."
     )
+
+
+# ---------------------------------------------------------------------------
+# Spoken text: context (how the node connects to what surrounds it)
+# ---------------------------------------------------------------------------
+
+
+def _spoken_context(node: dict, index: int, trail: list) -> str:
+    role, t = node["role"], node["type"]
+    if role == ROLE_EQUATION:
+        return "This is the whole equation."
+    if not trail:
+        return "This part has no surrounding expression to describe."
+    parent = trail[-1][0]
+
+    if parent["type"] == EQUATION:
+        side = "left" if index == 0 else "right"
+        other = _phrase(parent["children"][1 - index])
+        if t in _OPERATORS:
+            subject = f"The {_OPERATORS[t][1].lower()} expression {_phrase(node)}"
+        else:
+            subject = _cap(_label(node))
+        return (
+            f"{subject} forms the {side} side of the equation. "
+            f"The {'right' if index == 0 else 'left'} side is {other}."
+        )
+
+    side = "left" if trail[1][1] == 0 else "right"
+    region = f"It is part of the {side} side of the equation."
+    sibling = _other_child(parent, index)
+
+    if role == ROLE_COEFFICIENT:
+        n, v = _say(NUMBER, node["value"]), sibling["value"]
+        return (
+            f"The coefficient {n} belongs to the variable {v}: {v} is multiplied by {n}. "
+            f"Together they form the term {_phrase(parent)}."
+        )
+    if role == ROLE_VARIABLE and sibling is not None and sibling["role"] == ROLE_COEFFICIENT:
+        return f"The variable {node['value']} is multiplied by {_label(sibling)}. {region}"
+    if role == ROLE_CONSTANT:
+        n = _say(NUMBER, node["value"])
+        return f"The constant term {n} {_placement(node, parent, index)}. {region}"
+    return f"{_cap(_label(node))} {_placement(node, parent, index)}. {region}"
+
+
+def _annotate(node: dict, index: int, trail: list) -> None:
+    """Fill spoken_detailed and spoken_context top-down. `trail` is the list of
+    (ancestor, that ancestor's index in its own parent), root first."""
+    parent = trail[-1][0] if trail else None
+    node["spoken_detailed"] = _spoken_detailed(node, index, parent)
+    node["spoken_context"] = _spoken_context(node, index, trail)
+    for i, child in enumerate(node["children"]):
+        _annotate(child, i, trail + [(node, index)])
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +494,11 @@ def _spoken_context(node: _Ast, ctx: _Ctx) -> str:
 
 
 def _convert(node: _Ast, path: str, node_id: str, ctx: _Ctx) -> dict:
-    """Convert an already-validated node (and, recursively, its children)."""
+    """Convert an already-validated node (and, recursively, its children).
+
+    spoken_detailed / spoken_context are placeholders here; `_annotate` fills
+    them once the whole tree exists.
+    """
     if ctx.parent is None and node.type != EQUATION:
         raise ExplorerError(f"{path}: the root must be an Equation, got {node.type}")
     if ctx.parent is not None and node.type == EQUATION:
@@ -295,8 +521,8 @@ def _convert(node: _Ast, path: str, node_id: str, ctx: _Ctx) -> dict:
         "role": role,
         "value": node.value,
         "spoken_quick": _spoken_quick(node, role),
-        "spoken_detailed": _spoken_detailed(node, role),
-        "spoken_context": _spoken_context(node, ctx),
+        "spoken_detailed": "",
+        "spoken_context": "",
         "span": list(node.span),
         "children": children,
     }
@@ -309,4 +535,6 @@ def build_explorer_tree(ast: Any) -> dict:
     malformed tree, a non-Equation root, or an unsupported node type; nodes are
     never silently dropped.
     """
-    return _convert(_read_node(ast, "ast"), "ast", _make_id(None, 0), _ROOT_CTX)
+    root = _convert(_read_node(ast, "ast"), "ast", _make_id(None, 0), _ROOT_CTX)
+    _annotate(root, 0, [])
+    return root
