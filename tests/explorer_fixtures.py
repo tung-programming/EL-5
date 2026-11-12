@@ -20,10 +20,15 @@ Not stated in docs/contracts.md (Member 4 assumptions, to confirm with Member 1)
   - Pow children are [base, exponent]; the span of "x^2" covers "x^2"
   - a Group directly beside another node ("2(x + 3)") is a Mul of the two
   - Div is used for stacked fractions too: there is no Fraction node. Its span
-    covers the whole "numerator/denominator" text; when the numerator was typed
-    in brackets, e.g. "(x + 1)/2", the span includes the brackets and the
-    numerator's own span excludes them (there is no Group node, the brackets
-    only delimit it)
+    covers the whole "numerator/denominator" text. Brackets typed around the
+    numerator or denominator stay as Group nodes inside the Div ("(x + 1)/2" is
+    Div(Group(Add), 2)), exactly as engine/parser.py builds it: the Group's span
+    includes the brackets, its child's does not
+
+The four fixtures with a bracketed numerator or denominator ("(x+1)/2=3",
+"(2x+1)/(x-3)=4", "((x+1)/2+3)/4=1", "2(x+3)^2-(x-1)/4=5") were rewritten to match
+the real parser; tests/test_parser_integration_explorer.py checks every fixture
+against engine.parser.parse() so they cannot drift again.
 """
 
 from __future__ import annotations
@@ -232,7 +237,10 @@ AST_FRACTION_X_PLUS_1_OVER_2 = _node(
     [
         _node(
             "Div",
-            [_node("Add", [_var(1, 2), _num(1, 5, 6)], 1, 6), _num(2, 8, 9)],
+            [
+                _node("Group", [_node("Add", [_var(1, 2), _num(1, 5, 6)], 1, 6)], 0, 7),
+                _num(2, 8, 9),
+            ],
             0,
             9,
         ),
@@ -288,9 +296,8 @@ AST_GROUPED_FRACTION_SQUARED = _node(
 
 # ---------------------------------------------------------------------------
 # Review fixtures: structures combined, repeated or nested. Same
-# conventions as above (spans are [start, end) in the source string; a
-# Div whose numerator/denominator was typed in brackets spans the brackets
-# while its operand's own span does not).
+# conventions as above (spans are [start, end) in the source string; brackets
+# typed around a Div's numerator or denominator are a Group node inside the Div).
 # ---------------------------------------------------------------------------
 
 # "2(x + 3)^2 - (x - 1)/4 = 5"     multiplier, group inside a power, fraction of a difference
@@ -309,7 +316,14 @@ AST_MULTIPLIED_SQUARED_GROUP_MINUS_FRACTION = _node(
                         _node(
                             "Pow",
                             [
-                                _node("Group", [_node("Add", [_var(2, 3), _num(3, 6, 7)], 2, 7)], 1, 8),
+                                _node(
+                                    "Group",
+                                    [
+                                        _node("Add", [_var(2, 3), _num(3, 6, 7)], 2, 7),
+                                    ],
+                                    1,
+                                    8,
+                                ),
                                 _num(2, 9, 10),
                             ],
                             1,
@@ -321,7 +335,17 @@ AST_MULTIPLIED_SQUARED_GROUP_MINUS_FRACTION = _node(
                 ),
                 _node(
                     "Div",
-                    [_node("Sub", [_var(14, 15), _num(1, 18, 19)], 14, 19), _num(4, 21, 22)],
+                    [
+                        _node(
+                            "Group",
+                            [
+                                _node("Sub", [_var(14, 15), _num(1, 18, 19)], 14, 19),
+                            ],
+                            13,
+                            20,
+                        ),
+                        _num(4, 21, 22),
+                    ],
                     13,
                     22,
                 ),
@@ -424,8 +448,23 @@ AST_FRACTION_OF_SUM_OVER_DIFFERENCE = _node(
         _node(
             "Div",
             [
-                _node("Add", [_node("Mul", [_num(2, 1, 2), _var(2, 3)], 1, 3), _num(1, 6, 7)], 1, 7),
-                _node("Sub", [_var(10, 11), _num(3, 14, 15)], 10, 15),
+                _node(
+                    "Group",
+                    [
+                        _node(
+                            "Add",
+                            [
+                                _node("Mul", [_num(2, 1, 2), _var(2, 3)], 1, 3),
+                                _num(1, 6, 7),
+                            ],
+                            1,
+                            7,
+                        ),
+                    ],
+                    0,
+                    8,
+                ),
+                _node("Group", [_node("Sub", [_var(10, 11), _num(3, 14, 15)], 10, 15)], 9, 16),
             ],
             0,
             16,
@@ -445,18 +484,35 @@ AST_NESTED_FRACTIONS = _node(
             "Div",
             [
                 _node(
-                    "Add",
+                    "Group",
                     [
                         _node(
-                            "Div",
-                            [_node("Add", [_var(2, 3), _num(1, 6, 7)], 2, 7), _num(2, 9, 10)],
+                            "Add",
+                            [
+                                _node(
+                                    "Div",
+                                    [
+                                        _node(
+                                            "Group",
+                                            [
+                                                _node("Add", [_var(2, 3), _num(1, 6, 7)], 2, 7),
+                                            ],
+                                            1,
+                                            8,
+                                        ),
+                                        _num(2, 9, 10),
+                                    ],
+                                    1,
+                                    10,
+                                ),
+                                _num(3, 13, 14),
+                            ],
                             1,
-                            10,
+                            14,
                         ),
-                        _num(3, 13, 14),
                     ],
-                    1,
-                    14,
+                    0,
+                    15,
                 ),
                 _num(4, 16, 17),
             ],

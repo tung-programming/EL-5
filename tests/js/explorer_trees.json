@@ -308,7 +308,7 @@
   "role": "equation",
   "value": null,
   "spoken_quick": "Equation",
-  "spoken_detailed": "The whole equation. It says that the left side, the fraction with numerator x plus 1 and denominator 2, has the same value as the right side, 3.",
+  "spoken_detailed": "The whole equation. It says that the left side, the fraction with numerator the group x plus 1 end group and denominator 2, has the same value as the right side, 3.",
   "spoken_context": "This is the whole equation.",
   "children": [
    {
@@ -317,37 +317,48 @@
     "role": "left_side",
     "value": null,
     "spoken_quick": "Left side",
-    "spoken_detailed": "The left side of the equation, everything before the equals sign. It reads the fraction with numerator x plus 1 and denominator 2. Fraction. It has x plus 1 as its numerator and 2 as its denominator. The numerator is the top part and the denominator is the bottom part, so the fraction means the quantity x plus 1 divided by 2.",
-    "spoken_context": "The fraction with numerator x plus 1 and denominator 2 forms the left side of the equation. The right side is 3.",
+    "spoken_detailed": "The left side of the equation, everything before the equals sign. It reads the fraction with numerator the group x plus 1 end group and denominator 2. Fraction. It has the group x plus 1 as its numerator and 2 as its denominator. The numerator is the top part and the denominator is the bottom part, so the fraction means the group x plus 1 divided by 2.",
+    "spoken_context": "The fraction with numerator the group x plus 1, and denominator 2 forms the left side of the equation. The right side is 3.",
     "children": [
      {
       "id": "n0.0.0",
-      "type": "Add",
-      "role": "operator",
+      "type": "Group",
+      "role": "group",
       "value": null,
-      "spoken_quick": "Addition",
-      "spoken_detailed": "Addition. It combines the variable x and the constant 1 by adding them. It is the numerator of a fraction whose denominator is 2.",
-      "spoken_context": "The sum x plus 1 is the numerator of a fraction whose denominator is 2.",
+      "spoken_quick": "Group",
+      "spoken_detailed": "Group. The group contains x plus 1, which is treated as one quantity. The group is the brackets as a whole, and the sum x plus 1 is the expression inside it. It is the numerator of a fraction whose denominator is 2.",
+      "spoken_context": "The group x plus 1 is the numerator of a fraction whose denominator is 2. It is treated as one quantity.",
       "children": [
        {
         "id": "n0.0.0.0",
-        "type": "Variable",
-        "role": "variable",
-        "value": "x",
-        "spoken_quick": "Variable x",
-        "spoken_detailed": "x is the variable. It stands for an unknown number, the value we want to find.",
-        "spoken_context": "The variable x is added to the constant 1. It is part of the left side of the equation.",
-        "children": []
-       },
-       {
-        "id": "n0.0.0.1",
-        "type": "Number",
-        "role": "constant",
-        "value": "1",
-        "spoken_quick": "Constant term 1",
-        "spoken_detailed": "1 is a constant term: a plain number that does not multiply x. It is added to the variable x.",
-        "spoken_context": "The constant term 1 is added to the variable x. It is part of the left side of the equation.",
-        "children": []
+        "type": "Add",
+        "role": "operator",
+        "value": null,
+        "spoken_quick": "Addition",
+        "spoken_detailed": "Addition. It combines the variable x and the constant 1 by adding them. It is the content of the group, enclosed by its brackets.",
+        "spoken_context": "The sum x plus 1 is the content of the group, enclosed by its brackets.",
+        "children": [
+         {
+          "id": "n0.0.0.0.0",
+          "type": "Variable",
+          "role": "variable",
+          "value": "x",
+          "spoken_quick": "Variable x",
+          "spoken_detailed": "x is the variable. It stands for an unknown number, the value we want to find.",
+          "spoken_context": "The variable x is added to the constant 1. It is part of the left side of the equation.",
+          "children": []
+         },
+         {
+          "id": "n0.0.0.0.1",
+          "type": "Number",
+          "role": "constant",
+          "value": "1",
+          "spoken_quick": "Constant term 1",
+          "spoken_detailed": "1 is a constant term: a plain number that does not multiply x. It is added to the variable x.",
+          "spoken_context": "The constant term 1 is added to the variable x. It is part of the left side of the equation.",
+          "children": []
+         }
+        ]
        }
       ]
      },
@@ -357,8 +368,8 @@
       "role": "denominator",
       "value": "2",
       "spoken_quick": "Denominator 2",
-      "spoken_detailed": "2 is the denominator of the fraction: the bottom part, which the numerator x plus 1 is divided by. A denominator cannot be zero.",
-      "spoken_context": "The denominator 2 divides the numerator x plus 1. Together they form the fraction with numerator x plus 1 and denominator 2.",
+      "spoken_detailed": "2 is the denominator of the fraction: the bottom part, which the numerator the group x plus 1 is divided by. A denominator cannot be zero.",
+      "spoken_context": "The denominator 2 divides the numerator the group x plus 1. Together they form the fraction with numerator the group x plus 1, and denominator 2.",
       "children": []
      }
     ]
@@ -370,7 +381,7 @@
     "value": "3",
     "spoken_quick": "Right side",
     "spoken_detailed": "The right side of the equation, everything after the equals sign. It is just the number 3.",
-    "spoken_context": "The number 3 forms the right side of the equation. The left side is the fraction with numerator x plus 1 and denominator 2.",
+    "spoken_context": "The number 3 forms the right side of the equation. The left side is the fraction with numerator the group x plus 1, and denominator 2.",
     "children": []
    }
   ]

@@ -1180,14 +1180,19 @@ def test_number_times_number_is_neither():
     assert {n["role"] for n in root["children"][0]["children"]} == {"number"}
 
 
-def test_negated_multiplier_is_a_negation_of_a_number_not_a_multiplier():
-    # -2(x + 3): a Neg node is not a bare number, so the 2 below it is not a multiplier
+def test_negated_multiplier_is_the_multiplier_of_the_group():
+    # -2(x + 3) = Mul(Neg(2), Group): the whole -2 multiplies the group, like a bare 2
     group = G(x_plus_3(), 2, 9)
     root = build(op("Mul", [Ng(N(2, 1)), group], 0, 9), N(4, 12))
     neg, grp = root["children"][0]["children"]
-    assert (neg["type"], neg["role"], grp["role"]) == ("Neg", "operator", "group")
+    assert (neg["type"], neg["role"], grp["role"]) == ("Neg", "group_multiplier", "group")
+    assert neg["value"] is None  # the AST value of a Neg is null
+    assert neg["spoken_quick"] == "Multiplier negative 2"
+    assert neg["spoken_detailed"].startswith("Negative 2 is the multiplier of the group x plus 3.")
+    assert "multiplied by negative 2" in neg["spoken_detailed"]
     assert neg["children"][0]["role"] == "number"
-    assert find(root, "Number", "group_multiplier") == []
+    assert "number part of the multiplier negative 2" in neg["children"][0]["spoken_detailed"]
+    assert find(root, "Number", "group_multiplier") == []  # the Number inside is not the multiplier
     assert "-" not in spoken(neg)
 
 
@@ -1395,7 +1400,9 @@ def test_fraction_fixture_roles():
     frac = root["children"][0]
     num, den = frac["children"]
     assert (frac["role"], frac["type"]) == ("left_side", "Div")
-    assert (num["role"], num["type"]) == ("operator", "Add")
+    # the parser keeps the typed brackets: the numerator is a Group around the sum
+    assert (num["role"], num["type"]) == ("group", "Group")
+    assert (num["children"][0]["role"], num["children"][0]["type"]) == ("operator", "Add")
     assert (den["role"], den["value"]) == ("denominator", "2")
 
 
@@ -1446,18 +1453,20 @@ def test_fraction_numerator_and_denominator_text():
 
 
 def test_fraction_with_compound_numerator():
-    # (x + 1)/2 = 3 : the numerator is a sum, so it keeps the operator role and
-    # says where it sits; "x plus 1 divided by 2" must not be ambiguous
+    # (x + 1)/2 = 3 : the numerator is a Group around a sum, so it keeps the group
+    # role and says where it sits; "x plus 1 divided by 2" must not be ambiguous
     frac = tree("(x+1)/2=3")["children"][0]
     num, den = frac["children"]
     assert frac["spoken_detailed"].startswith("The left side of the equation")
-    assert "It has x plus 1 as its numerator and 2 as its denominator." in frac["spoken_detailed"]
-    assert "the quantity x plus 1 divided by 2" in frac["spoken_detailed"]
+    assert "It has the group x plus 1 as its numerator and 2 as its denominator." in (
+        frac["spoken_detailed"]
+    )
+    assert "the fraction means the group x plus 1 divided by 2" in frac["spoken_detailed"]
     assert "It is the numerator of a fraction whose denominator is 2." in num["spoken_detailed"]
     assert num["spoken_context"].startswith(
-        "The sum x plus 1 is the numerator of a fraction whose denominator is 2."
+        "The group x plus 1 is the numerator of a fraction whose denominator is 2."
     )
-    assert "the numerator x plus 1 is divided by" in den["spoken_detailed"]
+    assert "the numerator the group x plus 1 is divided by" in den["spoken_detailed"]
 
 
 def test_fraction_with_variable_denominator_keeps_variable_role():
@@ -1597,7 +1606,7 @@ def test_equation_text_reads_the_new_structures():
     )
     assert tree("(x+1)/2=3")["spoken_detailed"] == (
         "The whole equation. It says that the left side, the fraction with numerator "
-        "x plus 1 and denominator 2, has the same value as the right side, 3."
+        "the group x plus 1 end group and denominator 2, has the same value as the right side, 3."
     )
 
 
@@ -1880,6 +1889,18 @@ def is_variable_or_powered(node):
     )
 
 
+def negated_number_factor(node, parent, other):
+    """Neg(Number) as a factor of a Mul beside a variable, a powered variable or a group."""
+    return (
+        node["type"] == "Neg"
+        and node["children"][0]["type"] == "Number"
+        and parent is not None
+        and parent["type"] == "Mul"
+        and other is not None
+        and (is_variable_or_powered(other) or other["type"] == "Group")
+    )
+
+
 def check_roles(root):
     """Role rules from plan 7.6 / guide A1-A6, checked on every node."""
 
@@ -1908,6 +1929,9 @@ def check_roles(root):
             assert role == "power"
         elif t == "Div":
             assert role == "fraction"
+        elif t == "Neg" and negated_number_factor(n, parent, other):
+            # -3x is Mul(Neg(3), x): the negation as a whole is the coefficient / multiplier
+            assert role == ("coefficient" if is_variable_or_powered(other) else "group_multiplier")
         elif t in OPERATOR_TYPES:
             assert role == "operator"
         else:
@@ -1926,9 +1950,9 @@ def check_roles(root):
                 assert role == ("constant" if in_sum else "number")
         # the converse: the special roles appear nowhere else
         if role == "coefficient":
-            assert t == "Number" and parent["type"] == "Mul" and is_variable_or_powered(other)
+            assert t in ("Number", "Neg") and parent["type"] == "Mul" and is_variable_or_powered(other)
         if role == "group_multiplier":
-            assert t == "Number" and parent["type"] == "Mul" and other["type"] == "Group"
+            assert t in ("Number", "Neg") and parent["type"] == "Mul" and other["type"] == "Group"
         if role in ("base", "exponent"):
             assert t == "Number" and parent["type"] == "Pow"
         if role in ("numerator", "denominator"):
@@ -2122,9 +2146,9 @@ EXPECTED_ROLES = {
         "n0": "equation", "n0.0": "left_side", "n0.0.0": "operator",
         "n0.0.0.1": "power", "n0.0.0.1.0": "group", "n0.0.0.1.0.0": "operator",
         "n0.0.0.1.0.0.0": "variable", "n0.0.0.1.0.0.1": "constant",
-        "n0.0.0.1.1": "exponent", "n0.0.1": "fraction", "n0.0.1.0": "operator",
-        "n0.0.1.0.0": "variable", "n0.0.1.0.1": "constant",
-        "n0.0.1.1": "denominator", "n0.1": "right_side",
+        "n0.0.0.1.1": "exponent", "n0.0.1": "fraction", "n0.0.1.0": "group",
+        "n0.0.1.0.0": "operator", "n0.0.1.0.0.0": "variable",
+        "n0.0.1.0.0.1": "constant", "n0.0.1.1": "denominator", "n0.1": "right_side",
     },
     "((x+1)(x-2)+3)^2=16": {
         "n0.0": "left_side", "n0.0.0": "group", "n0.0.0.0": "operator",
@@ -2149,16 +2173,18 @@ EXPECTED_ROLES = {
         # a Div that is a whole side takes the side role (guide A2)
         "n0.0": "left_side",
         # a non-number numerator/denominator keeps its own role (guide A6)
-        "n0.0.0": "operator", "n0.0.0.0": "operator", "n0.0.0.0.0": "coefficient",
-        "n0.0.0.0.1": "variable", "n0.0.0.1": "constant",
-        "n0.0.1": "operator", "n0.0.1.0": "variable", "n0.0.1.1": "constant",
-        "n0.1": "right_side",
+        "n0.0.0": "group", "n0.0.0.0": "operator", "n0.0.0.0.0": "operator",
+        "n0.0.0.0.0.0": "coefficient", "n0.0.0.0.0.1": "variable",
+        "n0.0.0.0.1": "constant",
+        "n0.0.1": "group", "n0.0.1.0": "operator", "n0.0.1.0.0": "variable",
+        "n0.0.1.0.1": "constant", "n0.1": "right_side",
     },
     "((x+1)/2+3)/4=1": {
-        "n0.0": "left_side", "n0.0.0": "operator", "n0.0.0.0": "fraction",
-        "n0.0.0.0.0": "operator", "n0.0.0.0.0.0": "variable",
-        "n0.0.0.0.0.1": "constant", "n0.0.0.0.1": "denominator",
-        "n0.0.0.1": "constant", "n0.0.1": "denominator", "n0.1": "right_side",
+        "n0.0": "left_side", "n0.0.0": "group", "n0.0.0.0": "operator",
+        "n0.0.0.0.0": "fraction", "n0.0.0.0.0.0": "group",
+        "n0.0.0.0.0.0.0": "operator", "n0.0.0.0.0.0.0.0": "variable",
+        "n0.0.0.0.0.0.0.1": "constant", "n0.0.0.0.0.1": "denominator",
+        "n0.0.0.0.1": "constant", "n0.0.1": "denominator", "n0.1": "right_side",
     },
     "2(x+1)+3(x-1)=10": {
         "n0.0": "left_side", "n0.0.0": "operator", "n0.0.0.0": "group_multiplier",
@@ -2223,10 +2249,16 @@ def test_review_fixture_spans_slice_to_the_expected_text():
     mul, fraction = left["children"]
     assert src[slice(*mul["span"])] == "2(x + 3)^2"
     assert src[slice(*fraction["span"])] == "(x - 1)/4"
-    assert src[slice(*fraction["children"][0]["span"])] == "x - 1"  # brackets excluded
+    group = fraction["children"][0]
+    assert src[slice(*group["span"])] == "(x - 1)"  # the Group's span includes the brackets
+    assert src[slice(*group["children"][0]["span"])] == "x - 1"  # its child's does not
     src, ast = REVIEW_FIXTURES["(2x+1)/(x-3)=4"]
     num, den = ast["children"][0]["children"]
-    assert (src[slice(*num["span"])], src[slice(*den["span"])]) == ("2x + 1", "x - 3")
+    assert (num["type"], den["type"]) == ("Group", "Group")
+    assert (src[slice(*num["span"])], src[slice(*den["span"])]) == ("(2x + 1)", "(x - 3)")
+    assert (src[slice(*num["children"][0]["span"])], src[slice(*den["children"][0]["span"])]) == (
+        "2x + 1", "x - 3",
+    )
 
 
 # ---- 9.4 roles and invariants on many random trees --------------------------------
@@ -2332,22 +2364,31 @@ def test_power_inside_a_group_inside_a_power():
 
 def test_fraction_with_compound_numerator_and_denominator():
     root = build_explorer_tree(REVIEW_FIXTURES["(2x+1)/(x-3)=4"][1])
-    assert "the fraction with numerator 2x plus 1 and denominator x minus 3" in root["spoken_detailed"]
+    assert (
+        "the fraction with numerator the group 2x plus 1 end group and denominator "
+        "the group x minus 3 end group"
+    ) in root["spoken_detailed"]
     fraction = root["children"][0]
-    assert "the fraction means the quantity 2x plus 1 divided by the quantity x minus 3" in (
+    assert "the fraction means the group 2x plus 1 divided by the group x minus 3" in (
         fraction["spoken_detailed"]
     )
     numerator, denominator = fraction["children"]
-    assert "numerator of a fraction whose denominator is x minus 3" in numerator["spoken_detailed"]
-    assert "denominator of a fraction whose numerator is 2x plus 1" in denominator["spoken_detailed"]
+    assert "numerator of a fraction whose denominator is the group x minus 3" in (
+        numerator["spoken_detailed"]
+    )
+    assert "denominator of a fraction whose numerator is the group 2x plus 1" in (
+        denominator["spoken_detailed"]
+    )
 
 
 def test_fraction_nested_in_a_numerator_names_both_fractions():
     root = build_explorer_tree(REVIEW_FIXTURES["((x+1)/2+3)/4=1"][1])
     outer = root["children"][0]
     inner = find(root, "Div", "fraction")[0]
-    assert inner["id"] == "n0.0.0.0"
-    assert "x plus 1 as its numerator and 2 as its denominator" in inner["spoken_detailed"]
+    assert inner["id"] == "n0.0.0.0.0"  # Div > Group > Add > Div
+    assert "the group x plus 1 as its numerator and 2 as its denominator" in (
+        inner["spoken_detailed"]
+    )
     assert "is added to the constant 3" in inner["spoken_context"]
     assert "as its numerator and 4 as its denominator" in outer["spoken_detailed"]
     assert inner["spoken_context"] != outer["spoken_context"]
@@ -2432,12 +2473,12 @@ def test_everything_combined_reads_in_the_right_order():
     root = build_explorer_tree(REVIEW_FIXTURES["2(x+3)^2-(x-1)/4=5"][1])
     assert root["spoken_detailed"] == (
         "The whole equation. It says that the left side, 2 times the group x plus 3 "
-        "end group to the power of 2, minus the fraction with numerator x minus 1 and "
-        "denominator 4, has the same value as the right side, 5."
+        "end group to the power of 2, minus the fraction with numerator the group x minus 1 "
+        "end group and denominator 4, has the same value as the right side, 5."
     )
     fraction = find(root, "Div", "fraction")[0]
     assert fraction["spoken_context"].startswith(
-        "The fraction with numerator x minus 1 and denominator 4 is subtracted from "
+        "The fraction with numerator the group x minus 1, and denominator 4 is subtracted from "
         "the product 2 times the group x plus 3, to the power of 2."
     )
     power = find(root, "Pow", "power")[0]

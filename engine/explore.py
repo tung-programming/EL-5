@@ -226,6 +226,21 @@ def _is_powered_variable(node: Any) -> bool:
     return isinstance(base, dict) and base.get("type") == VARIABLE
 
 
+def _is_negated_number(node: Any) -> bool:
+    """A Neg whose operand is a bare Number (`-3`). Works on _Ast and on dicts."""
+    if isinstance(node, _Ast):
+        node_type, kids = node.type, node.children
+    else:
+        node_type, kids = node.get("type"), node.get("children")
+    return (
+        node_type == "Neg"
+        and isinstance(kids, list)
+        and len(kids) == 1
+        and isinstance(kids[0], dict)
+        and kids[0].get("type") == NUMBER
+    )
+
+
 def _determine_role(node: _Ast, ctx: _Ctx) -> str:
     if node.type == EQUATION:
         return ROLE_EQUATION
@@ -239,6 +254,16 @@ def _determine_role(node: _Ast, ctx: _Ctx) -> str:
         return ROLE_FRACTION
     if node.type == "Pow":
         return ROLE_POWER
+    if node.type == "Neg" and _is_negated_number(node):
+        # -3x is Mul(Neg(3), x): the whole negation -3 is the coefficient of x
+        # (and -2(x + 3): the multiplier of the group), exactly like a bare 3
+        parent = ctx.parent
+        if parent is not None and parent.type == "Mul":
+            others = [s for i, s in enumerate(ctx.siblings) if i != ctx.index]
+            if any(s.type == VARIABLE or _is_powered_variable(s) for s in others):
+                return ROLE_COEFFICIENT
+            if any(s.type == GROUP for s in others):
+                return ROLE_GROUP_MULTIPLIER
     if node.type in _OPERATORS:
         return ROLE_OPERATOR
     # NUMBER from here on
@@ -299,7 +324,24 @@ def _whole_number(value: str) -> Optional[Decimal]:
 
 
 def _say_value(node: _Ast) -> str:
+    if _is_negated_number(node):  # the coefficient / multiplier -3
+        return "negative " + _say(NUMBER, node.children[0]["value"])
     return _say(node.type, node.value)
+
+
+def _say_factor(d: dict) -> str:
+    """Spoken value of a numeric factor: a Number, or a negated Number (-3) that is
+    a coefficient or multiplier."""
+    if _is_negated_number(d):
+        return "negative " + _say(NUMBER, d["children"][0]["value"])
+    return _say(NUMBER, d["value"])
+
+
+def _is_numeric_factor(d: dict) -> bool:
+    """A Number, or the negation of one that has the coefficient / multiplier role."""
+    return d["type"] == NUMBER or (
+        _is_negated_number(d) and d.get("role") in (ROLE_COEFFICIENT, ROLE_GROUP_MULTIPLIER)
+    )
 
 
 def _operator_name(node: _Ast) -> str:
@@ -323,7 +365,7 @@ def _is_number_times_variable(d: dict) -> bool:
     either order: 3x, x*3, 3x^2. These are single terms."""
     if d["type"] != "Mul":
         return False
-    kinds = sorted(c["type"] for c in d["children"])
+    kinds = sorted(NUMBER if _is_numeric_factor(c) else c["type"] for c in d["children"])
     return kinds == [NUMBER, VARIABLE] or (
         kinds == [NUMBER, "Pow"] and any(_is_powered_variable(c) for c in d["children"])
     )
@@ -436,6 +478,9 @@ def _label(d: dict) -> str:
         return f"the {word} {_say(t, d['value'])}"
     if t == VARIABLE:
         return f"the variable {d['value']}"
+    if t == "Neg" and d.get("role") in (ROLE_COEFFICIENT, ROLE_GROUP_MULTIPLIER):
+        word = "coefficient" if d["role"] == ROLE_COEFFICIENT else "multiplier"
+        return f"the {word} {_say_factor(d)}"
     if t == "Neg":
         return f"the negation of {_child_phrase(d, 0)}"
     if t in (GROUP, DIV):
@@ -501,16 +546,18 @@ def _operation_sentence(node: dict) -> str:
         return f"{name}. It takes {b} away from {a}."
     if t == "Mul":
         text = f"{name}. It combines {a} and {b} by multiplying them."
-        if kids[0]["type"] == NUMBER and kids[1]["type"] == VARIABLE:
-            n = _say(NUMBER, kids[0]["value"])
+        if _is_numeric_factor(kids[0]) and kids[1]["type"] == VARIABLE:
+            n = _say_factor(kids[0])
+            if kids[0]["type"] == "Neg":  # "negative 3 times x" already says it
+                return f"{text} So the term means {n} times {kids[1]['value']}."
             return f"{text} So {_phrase(node)} means {n} times {kids[1]['value']}."
         for num, powered in ((0, 1), (1, 0)):
-            if kids[num]["type"] == NUMBER and _is_powered_variable(kids[powered]):
-                n = _say(NUMBER, kids[num]["value"])
+            if _is_numeric_factor(kids[num]) and _is_powered_variable(kids[powered]):
+                n = _say_factor(kids[num])
                 return f"{text} The power is worked out first, then multiplied by {n}."
         for g, other in ((1, 0), (0, 1)):
-            if kids[g]["type"] == GROUP and kids[other]["type"] == NUMBER:
-                m = _say(NUMBER, kids[other]["value"])
+            if kids[g]["type"] == GROUP and _is_numeric_factor(kids[other]):
+                m = _say_factor(kids[other])
                 return f"{text} So {m} multiplies the {_entire(kids[g])}."
         return text
     raise AssertionError(f"unreachable operator {t}")  # Add/Sub/Mul handled above
@@ -639,7 +686,7 @@ def _position_number_detailed(node: dict, parent: Optional[dict]) -> str:
     """Detailed text for a bare number that is a multiplier, base, exponent,
     numerator or denominator."""
     role = node["role"]
-    n = _say(NUMBER, node["value"])
+    n = _say_factor(node)
     kids = parent["children"]
     if role == ROLE_GROUP_MULTIPLIER:
         group = next(k for k in kids if k["type"] == GROUP)
@@ -702,7 +749,7 @@ def _spoken_detailed(node: dict, index: int, parent: Optional[dict]) -> str:
     if role in _POSITION_NUMBER_ROLES:
         return _position_number_detailed(node, parent)
     if role == ROLE_COEFFICIENT and sibling is not None and sibling["type"] == "Pow":
-        n = _say(NUMBER, node["value"])
+        n = _say_factor(node)
         powered = _phrase(sibling)
         return (
             f"{_cap(n)} is the coefficient of {powered}. It tells you {powered} is "
@@ -710,7 +757,7 @@ def _spoken_detailed(node: dict, index: int, parent: Optional[dict]) -> str:
             f"belongs to {_phrase(sibling['children'][0])} alone, not to {n}."
         )
     if role == ROLE_COEFFICIENT:
-        n = _say(NUMBER, node["value"])
+        n = _say_factor(node)
         v = sibling["value"] if sibling else "x"
         return (
             f"{_cap(n)} is the coefficient of {v}. It tells you {v} is multiplied by {n}, "
@@ -729,6 +776,14 @@ def _spoken_detailed(node: dict, index: int, parent: Optional[dict]) -> str:
         elif parent is not None:
             text += " The negation changes its sign."
         return text
+    if parent is not None and _is_negated_number(parent) and parent.get("role") in (
+        ROLE_COEFFICIENT, ROLE_GROUP_MULTIPLIER,
+    ):
+        word = "coefficient" if parent["role"] == ROLE_COEFFICIENT else "multiplier"
+        return (
+            f"{_cap(n)} is the number part of the {word} negative {n}. The negation "
+            "gives it its sign."
+        )
     return (
         f"{_cap(n)} is a plain number here. It is not a coefficient, because it does not "
         "multiply x, and not a constant term, because it is not added or subtracted."
@@ -769,7 +824,7 @@ def _spoken_context(node: dict, index: int, trail: list) -> str:
     sibling = _other_child(parent, index)
 
     if role == ROLE_GROUP_MULTIPLIER:
-        n = _say(NUMBER, node["value"])
+        n = _say_factor(node)
         return (
             f"The multiplier {n} multiplies the {_entire(sibling)}. "
             f"Together they form the product {_phrase(parent)}. {region}"
@@ -799,13 +854,13 @@ def _spoken_context(node: dict, index: int, trail: list) -> str:
             f"It is treated as one quantity. {region}"
         )
     if role == ROLE_COEFFICIENT and sibling["type"] == "Pow":
-        n, powered = _say(NUMBER, node["value"]), _phrase(sibling)
+        n, powered = _say_factor(node), _phrase(sibling)
         return (
             f"The coefficient {n} belongs to {powered}: it is multiplied by {n}. "
             f"Together they form the term {_phrase(parent)}."
         )
     if role == ROLE_COEFFICIENT:
-        n, v = _say(NUMBER, node["value"]), sibling["value"]
+        n, v = _say_factor(node), sibling["value"]
         return (
             f"The coefficient {n} belongs to the variable {v}: {v} is multiplied by {n}. "
             f"Together they form the term {_phrase(parent)}."

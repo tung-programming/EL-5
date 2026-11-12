@@ -25,8 +25,8 @@ Related: `docs/keyboard_guide.md` (what the keys should do), plan.md §6 (journe
 
 | Suite | Command | Result |
 |---|---|---|
-| Keyboard logic and DOM adapter (fake DOM) | `node --test tests/js/` | 82 passed, 0 failed (includes regression tests for every review fix) |
-| Explorer + fixture drift guard | `pytest` | 1213 passed, 0 failed, 0 xfailed. Includes the Phase 3 review tests and the refinement tests (powered coefficients, spoken group boundaries, capitalisation, long bases), and the drift guard for `tests/js/explorer_trees.json` |
+| Keyboard logic and DOM adapter (fake DOM) | `node --test tests/js/` | 86 passed, 0 failed (last run after merging `main`, 12 November 2026) |
+| Explorer, real-parser integration and fixture drift guard | `pytest tests/test_explore.py tests/test_parser_integration_explorer.py tests/test_explorer_keys_fixture.py` | 1381 collected (1328 + 52 + 1); the full `pytest` run on the merged tree was 1847 passed, 1 failed, the failure being Member 2/3's `tests/test_cli.py` (not in Member 4's files) |
 
 The JS tests run against a hand-written fake DOM, not a browser. The fake fires events the way the DOM does (bubbling, no `focusin` when already focused), but it cannot show real focus, scrolling, live-region or `speechSynthesis` behaviour. They prove the logic and the attributes set. They do not prove how a browser or screen reader behaves.
 
@@ -52,7 +52,8 @@ Everything in sections 1 to 8 below, in particular keyboard_guide T1 to T14. The
 - `createView` assumes the tree is fully expanded (guide A5).
 - `speechSynthesis` use is injected by the page; the choice between modes is open question Q1 (Member 5).
 - Selection styling and focus outline are CSS work for Member 5; the module only sets `data-selected`.
-- The explorer tree still comes from hand-written mock ASTs that follow `docs/contracts.md`, until Member 1's parser lands. No real parser output has been explored.
+- The 12 November 2026 numbers above are from the merged working tree (merge staged, not committed).
+- The keyboard module's JS fixtures (`tests/js/explorer_trees.json`) come from hand-written ASTs that match the real parser's output (checked by `tests/test_parser_integration_explorer.py`). Real parser output has been run through `build_explorer_tree` in Python only; nothing was explored in a browser.
 - AltGr handling relies on `getModifierState("AltGraph")`. Real Ctrl+Alt combinations on AltGr layouts may also report AltGraph, so shortcut pass-through is not guaranteed there. Not verified across real browsers and keyboard layouts. Letter keys I, C, R match the typed character, so they do not work on layouts that do not produce those letters.
 - Chrome is reported to sometimes drop an utterance spoken straight after `speechSynthesis.cancel()` (speech mode only). Unverified here.
 - In screen-reader mode, opening and leaving the explorer both move focus and write the live region, so a screen reader may speak the focus change and the live text one after the other (or cut one off). Needs checking with NVDA and Orca.
