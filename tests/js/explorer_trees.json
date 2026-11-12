@@ -1,0 +1,522 @@
+{
+ "3x+5=14": {
+  "id": "n0",
+  "type": "Equation",
+  "role": "equation",
+  "value": null,
+  "spoken_quick": "Equation",
+  "spoken_detailed": "The whole equation. It says that the left side, 3x plus 5, has the same value as the right side, 14.",
+  "spoken_context": "This is the whole equation.",
+  "span": [
+   0,
+   11
+  ],
+  "children": [
+   {
+    "id": "n0.0",
+    "type": "Add",
+    "role": "left_side",
+    "value": null,
+    "spoken_quick": "Left side",
+    "spoken_detailed": "The left side of the equation, everything before the equals sign. It reads 3x plus 5. Addition. It combines the term 3x and the constant 5 by adding them.",
+    "spoken_context": "The addition expression 3x plus 5 forms the left side of the equation. The right side is 14.",
+    "span": [
+     0,
+     6
+    ],
+    "children": [
+     {
+      "id": "n0.0.0",
+      "type": "Mul",
+      "role": "operator",
+      "value": null,
+      "spoken_quick": "Multiplication",
+      "spoken_detailed": "Multiplication. It combines the coefficient 3 and the variable x by multiplying them. So 3x means 3 times x.",
+      "spoken_context": "The term 3x is added to the constant 5. It is part of the left side of the equation.",
+      "span": [
+       0,
+       2
+      ],
+      "children": [
+       {
+        "id": "n0.0.0.0",
+        "type": "Number",
+        "role": "coefficient",
+        "value": 3,
+        "spoken_quick": "Coefficient 3",
+        "spoken_detailed": "3 is the coefficient of x. It tells you x is multiplied by 3, so the term means 3 times x.",
+        "spoken_context": "The coefficient 3 belongs to the variable x: x is multiplied by 3. Together they form the term 3x.",
+        "span": [
+         0,
+         1
+        ],
+        "children": []
+       },
+       {
+        "id": "n0.0.0.1",
+        "type": "Variable",
+        "role": "variable",
+        "value": "x",
+        "spoken_quick": "Variable x",
+        "spoken_detailed": "x is the variable. It stands for an unknown number, the value we want to find. Here it is multiplied by the coefficient 3.",
+        "spoken_context": "The variable x is multiplied by the coefficient 3. It is part of the left side of the equation.",
+        "span": [
+         1,
+         2
+        ],
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "n0.0.1",
+      "type": "Number",
+      "role": "constant_term",
+      "value": 5,
+      "spoken_quick": "Constant term 5",
+      "spoken_detailed": "5 is a constant term: a plain number that does not multiply x. It is added to the term 3x.",
+      "spoken_context": "The constant term 5 is added to the term 3x. It is part of the left side of the equation.",
+      "span": [
+       5,
+       6
+      ],
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "n0.1",
+    "type": "Number",
+    "role": "right_side",
+    "value": 14,
+    "spoken_quick": "Right side",
+    "spoken_detailed": "The right side of the equation, everything after the equals sign. It is just the number 14.",
+    "spoken_context": "The number 14 forms the right side of the equation. The left side is 3x plus 5.",
+    "span": [
+     9,
+     11
+    ],
+    "children": []
+   }
+  ]
+ },
+ "2x+3=9": {
+  "id": "n0",
+  "type": "Equation",
+  "role": "equation",
+  "value": null,
+  "spoken_quick": "Equation",
+  "spoken_detailed": "The whole equation. It says that the left side, 2x plus 3, has the same value as the right side, 9.",
+  "spoken_context": "This is the whole equation.",
+  "span": [
+   0,
+   10
+  ],
+  "children": [
+   {
+    "id": "n0.0",
+    "type": "Add",
+    "role": "left_side",
+    "value": null,
+    "spoken_quick": "Left side",
+    "spoken_detailed": "The left side of the equation, everything before the equals sign. It reads 2x plus 3. Addition. It combines the term 2x and the constant 3 by adding them.",
+    "spoken_context": "The addition expression 2x plus 3 forms the left side of the equation. The right side is 9.",
+    "span": [
+     0,
+     6
+    ],
+    "children": [
+     {
+      "id": "n0.0.0",
+      "type": "Mul",
+      "role": "operator",
+      "value": null,
+      "spoken_quick": "Multiplication",
+      "spoken_detailed": "Multiplication. It combines the coefficient 2 and the variable x by multiplying them. So 2x means 2 times x.",
+      "spoken_context": "The term 2x is added to the constant 3. It is part of the left side of the equation.",
+      "span": [
+       0,
+       2
+      ],
+      "children": [
+       {
+        "id": "n0.0.0.0",
+        "type": "Number",
+        "role": "coefficient",
+        "value": 2,
+        "spoken_quick": "Coefficient 2",
+        "spoken_detailed": "2 is the coefficient of x. It tells you x is multiplied by 2, so the term means 2 times x.",
+        "spoken_context": "The coefficient 2 belongs to the variable x: x is multiplied by 2. Together they form the term 2x.",
+        "span": [
+         0,
+         1
+        ],
+        "children": []
+       },
+       {
+        "id": "n0.0.0.1",
+        "type": "Variable",
+        "role": "variable",
+        "value": "x",
+        "spoken_quick": "Variable x",
+        "spoken_detailed": "x is the variable. It stands for an unknown number, the value we want to find. Here it is multiplied by the coefficient 2.",
+        "spoken_context": "The variable x is multiplied by the coefficient 2. It is part of the left side of the equation.",
+        "span": [
+         1,
+         2
+        ],
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "n0.0.1",
+      "type": "Number",
+      "role": "constant_term",
+      "value": 3,
+      "spoken_quick": "Constant term 3",
+      "spoken_detailed": "3 is a constant term: a plain number that does not multiply x. It is added to the term 2x.",
+      "spoken_context": "The constant term 3 is added to the term 2x. It is part of the left side of the equation.",
+      "span": [
+       5,
+       6
+      ],
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "n0.1",
+    "type": "Number",
+    "role": "right_side",
+    "value": 9,
+    "spoken_quick": "Right side",
+    "spoken_detailed": "The right side of the equation, everything after the equals sign. It is just the number 9.",
+    "spoken_context": "The number 9 forms the right side of the equation. The left side is 2x plus 3.",
+    "span": [
+     9,
+     10
+    ],
+    "children": []
+   }
+  ]
+ },
+ "2(x+3)=12": {
+  "id": "n0",
+  "type": "Equation",
+  "role": "equation",
+  "value": null,
+  "spoken_quick": "Equation",
+  "spoken_detailed": "The whole equation. It says that the left side, 2 times the group x plus 3, has the same value as the right side, 12.",
+  "spoken_context": "This is the whole equation.",
+  "span": [
+   0,
+   13
+  ],
+  "children": [
+   {
+    "id": "n0.0",
+    "type": "Mul",
+    "role": "left_side",
+    "value": null,
+    "spoken_quick": "Left side",
+    "spoken_detailed": "The left side of the equation, everything before the equals sign. It reads 2 times the group x plus 3. Multiplication. It combines the multiplier 2 and the group x plus 3 by multiplying them. So 2 multiplies the entire group x plus 3.",
+    "spoken_context": "The multiplication expression 2 times the group x plus 3 forms the left side of the equation. The right side is 12.",
+    "span": [
+     0,
+     8
+    ],
+    "children": [
+     {
+      "id": "n0.0.0",
+      "type": "Number",
+      "role": "group_multiplier",
+      "value": 2,
+      "spoken_quick": "Multiplier 2",
+      "spoken_detailed": "2 is the multiplier of the group x plus 3. It multiplies the entire group x plus 3, so every part inside the brackets is multiplied by 2. It is not a coefficient, because it multiplies a group and not the variable.",
+      "spoken_context": "The multiplier 2 multiplies the entire group x plus 3. Together they form the product 2 times the group x plus 3. It is part of the left side of the equation.",
+      "span": [
+       0,
+       1
+      ],
+      "children": []
+     },
+     {
+      "id": "n0.0.1",
+      "type": "Group",
+      "role": "group",
+      "value": null,
+      "spoken_quick": "Group",
+      "spoken_detailed": "Group. The group contains x plus 3, which is treated as one quantity. The group is the brackets as a whole, and the sum x plus 3 is the expression inside it. The entire group is multiplied by the multiplier 2.",
+      "spoken_context": "The group x plus 3 is multiplied by the multiplier 2. It is treated as one quantity. It is part of the left side of the equation.",
+      "span": [
+       1,
+       8
+      ],
+      "children": [
+       {
+        "id": "n0.0.1.0",
+        "type": "Add",
+        "role": "operator",
+        "value": null,
+        "spoken_quick": "Addition",
+        "spoken_detailed": "Addition. It combines the variable x and the constant 3 by adding them. It is the content of the group, enclosed by its brackets.",
+        "spoken_context": "The sum x plus 3 is the content of the group, enclosed by its brackets.",
+        "span": [
+         2,
+         7
+        ],
+        "children": [
+         {
+          "id": "n0.0.1.0.0",
+          "type": "Variable",
+          "role": "variable",
+          "value": "x",
+          "spoken_quick": "Variable x",
+          "spoken_detailed": "x is the variable. It stands for an unknown number, the value we want to find.",
+          "spoken_context": "The variable x is added to the constant 3. It is part of the left side of the equation.",
+          "span": [
+           2,
+           3
+          ],
+          "children": []
+         },
+         {
+          "id": "n0.0.1.0.1",
+          "type": "Number",
+          "role": "constant_term",
+          "value": 3,
+          "spoken_quick": "Constant term 3",
+          "spoken_detailed": "3 is a constant term: a plain number that does not multiply x. It is added to the variable x.",
+          "spoken_context": "The constant term 3 is added to the variable x. It is part of the left side of the equation.",
+          "span": [
+           6,
+           7
+          ],
+          "children": []
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "n0.1",
+    "type": "Number",
+    "role": "right_side",
+    "value": 12,
+    "spoken_quick": "Right side",
+    "spoken_detailed": "The right side of the equation, everything after the equals sign. It is just the number 12.",
+    "spoken_context": "The number 12 forms the right side of the equation. The left side is 2 times the group x plus 3.",
+    "span": [
+     11,
+     13
+    ],
+    "children": []
+   }
+  ]
+ },
+ "x^2+3=7": {
+  "id": "n0",
+  "type": "Equation",
+  "role": "equation",
+  "value": null,
+  "spoken_quick": "Equation",
+  "spoken_detailed": "The whole equation. It says that the left side, x to the power of 2, plus 3, has the same value as the right side, 7.",
+  "spoken_context": "This is the whole equation.",
+  "span": [
+   0,
+   11
+  ],
+  "children": [
+   {
+    "id": "n0.0",
+    "type": "Add",
+    "role": "left_side",
+    "value": null,
+    "spoken_quick": "Left side",
+    "spoken_detailed": "The left side of the equation, everything before the equals sign. It reads x to the power of 2, plus 3. Addition. It combines the expression x to the power of 2 and the constant 3 by adding them.",
+    "spoken_context": "The addition expression x to the power of 2, plus 3 forms the left side of the equation. The right side is 7.",
+    "span": [
+     0,
+     7
+    ],
+    "children": [
+     {
+      "id": "n0.0.0",
+      "type": "Pow",
+      "role": "power",
+      "value": null,
+      "spoken_quick": "Power",
+      "spoken_detailed": "Power. The base is x and the exponent is 2. x squared means x is multiplied by itself: x times x.",
+      "spoken_context": "The expression x to the power of 2 is added to the constant 3. It is part of the left side of the equation.",
+      "span": [
+       0,
+       3
+      ],
+      "children": [
+       {
+        "id": "n0.0.0.0",
+        "type": "Variable",
+        "role": "variable",
+        "value": "x",
+        "spoken_quick": "Variable x",
+        "spoken_detailed": "x is the variable. It stands for an unknown number, the value we want to find. It is the base, raised to the power 2.",
+        "spoken_context": "The variable x is the base, raised to the power 2.",
+        "span": [
+         0,
+         1
+        ],
+        "children": []
+       },
+       {
+        "id": "n0.0.0.1",
+        "type": "Number",
+        "role": "exponent",
+        "value": 2,
+        "spoken_quick": "Exponent 2",
+        "spoken_detailed": "2 is the exponent. It indicates that x is multiplied by itself. It is not a constant term or a coefficient: it is not added to anything and does not multiply anything. It only says how many times the base is multiplied.",
+        "spoken_context": "The exponent 2 belongs to the base x. Together they form x to the power of 2.",
+        "span": [
+         2,
+         3
+        ],
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "n0.0.1",
+      "type": "Number",
+      "role": "constant_term",
+      "value": 3,
+      "spoken_quick": "Constant term 3",
+      "spoken_detailed": "3 is a constant term: a plain number that does not multiply x. It is added to the expression x to the power of 2.",
+      "spoken_context": "The constant term 3 is added to the expression x to the power of 2. It is part of the left side of the equation.",
+      "span": [
+       6,
+       7
+      ],
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "n0.1",
+    "type": "Number",
+    "role": "right_side",
+    "value": 7,
+    "spoken_quick": "Right side",
+    "spoken_detailed": "The right side of the equation, everything after the equals sign. It is just the number 7.",
+    "spoken_context": "The number 7 forms the right side of the equation. The left side is x to the power of 2, plus 3.",
+    "span": [
+     10,
+     11
+    ],
+    "children": []
+   }
+  ]
+ },
+ "(x+1)/2=3": {
+  "id": "n0",
+  "type": "Equation",
+  "role": "equation",
+  "value": null,
+  "spoken_quick": "Equation",
+  "spoken_detailed": "The whole equation. It says that the left side, the fraction with numerator x plus 1 and denominator 2, has the same value as the right side, 3.",
+  "spoken_context": "This is the whole equation.",
+  "span": [
+   0,
+   13
+  ],
+  "children": [
+   {
+    "id": "n0.0",
+    "type": "Fraction",
+    "role": "left_side",
+    "value": null,
+    "spoken_quick": "Left side",
+    "spoken_detailed": "The left side of the equation, everything before the equals sign. It reads the fraction with numerator x plus 1 and denominator 2. Fraction. It has x plus 1 as its numerator and 2 as its denominator. The numerator is the top part and the denominator is the bottom part, so the fraction means the quantity x plus 1 divided by 2.",
+    "spoken_context": "The fraction with numerator x plus 1 and denominator 2 forms the left side of the equation. The right side is 3.",
+    "span": [
+     0,
+     9
+    ],
+    "children": [
+     {
+      "id": "n0.0.0",
+      "type": "Add",
+      "role": "operator",
+      "value": null,
+      "spoken_quick": "Addition",
+      "spoken_detailed": "Addition. It combines the variable x and the constant 1 by adding them. It is the numerator of a fraction whose denominator is 2.",
+      "spoken_context": "The sum x plus 1 is the numerator of a fraction whose denominator is 2.",
+      "span": [
+       1,
+       6
+      ],
+      "children": [
+       {
+        "id": "n0.0.0.0",
+        "type": "Variable",
+        "role": "variable",
+        "value": "x",
+        "spoken_quick": "Variable x",
+        "spoken_detailed": "x is the variable. It stands for an unknown number, the value we want to find.",
+        "spoken_context": "The variable x is added to the constant 1. It is part of the left side of the equation.",
+        "span": [
+         1,
+         2
+        ],
+        "children": []
+       },
+       {
+        "id": "n0.0.0.1",
+        "type": "Number",
+        "role": "constant_term",
+        "value": 1,
+        "spoken_quick": "Constant term 1",
+        "spoken_detailed": "1 is a constant term: a plain number that does not multiply x. It is added to the variable x.",
+        "spoken_context": "The constant term 1 is added to the variable x. It is part of the left side of the equation.",
+        "span": [
+         5,
+         6
+        ],
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "n0.0.1",
+      "type": "Number",
+      "role": "denominator",
+      "value": 2,
+      "spoken_quick": "Denominator 2",
+      "spoken_detailed": "2 is the denominator of the fraction: the bottom part, which the numerator x plus 1 is divided by. A denominator cannot be zero.",
+      "spoken_context": "The denominator 2 divides the numerator x plus 1. Together they form the fraction with numerator x plus 1 and denominator 2.",
+      "span": [
+       8,
+       9
+      ],
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "n0.1",
+    "type": "Number",
+    "role": "right_side",
+    "value": 3,
+    "spoken_quick": "Right side",
+    "spoken_detailed": "The right side of the equation, everything after the equals sign. It is just the number 3.",
+    "spoken_context": "The number 3 forms the right side of the equation. The left side is the fraction with numerator x plus 1 and denominator 2.",
+    "span": [
+     12,
+     13
+    ],
+    "children": []
+   }
+  ]
+ }
+}

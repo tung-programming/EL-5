@@ -5,6 +5,52 @@ Related: `docs/keyboard_guide.md` (what the keys should do), plan.md §6 (journe
 
 **Status: not yet run.** Every box is unchecked. No NVDA or Orca testing has been performed. Fill in the results table at the bottom only from real sessions.
 
+## Phase 3 status (read this first)
+
+**NVDA and Orca testing: NOT YET PERFORMED.** The page (`static/index.html`, `app.js`, `style.css`) is still a stub owned by Member 5, so there is nothing to run a screen reader against. No OS, browser or screen-reader version has been recorded because no session happened. Every manual box below stays unchecked. The results table is empty on purpose.
+
+### Implemented (Phase 3, `static/explorer_keys.js`)
+
+- Full key map from `docs/keyboard_guide.md`: arrows, Space, I, C, R, Home, ?, Esc, with the boundary messages.
+- Focus tracking over the real explorer tree, safe handling of unknown ids, malformed trees and malformed events.
+- Three explanation depths on Space / I / C using `spoken_quick`, `spoken_detailed`, `spoken_context`.
+- DOM adapter: `role="tree"` / `treeitem` / `group`, `aria-label` (quick text), `aria-level`, `aria-posinset`, `aria-setsize`, `aria-expanded`, `aria-selected`, roving `tabindex`, an `aria-live="polite"` region, a visible key-help panel, and a `data-selected` hook for a non-colour selection style.
+- One-channel announcement strategy (screen-reader mode vs speech mode) so the screen reader and `speechSynthesis` never both speak the same event.
+
+### Automated test results
+
+| Suite | Command | Result |
+|---|---|---|
+| Keyboard logic and DOM adapter (fake DOM) | `node --test tests/js/` | 41 passed, 0 failed |
+| Explorer + fixture drift guard | `pytest` | 329 passed (the 328 existing explorer tests plus 1 guard that keeps `tests/js/explorer_trees.json` in step with `engine/explore.py`) |
+
+The JS tests run against a hand-written fake DOM, not a browser. They prove the logic and the attributes set. They do not prove how a browser or screen reader behaves.
+
+### Still needs manual verification (needs Member 5's page)
+
+Everything in sections 1 to 8 below, in particular keyboard_guide T1 to T14. The riskiest ones: focus-mode switching (T1), Esc handling (T5), Space and letter keys in browse mode (T4), single announcement of live-region text (T8), screen reader versus page speech (T9).
+
+### NVDA and Orca procedure (reproducible)
+
+1. Record: OS and version, browser and version, screen reader and version, speech rate.
+2. Start the app: `uvicorn app:app`, open the page.
+3. NVDA (Windows 10/11, Firefox and Chrome) or Orca (Linux, Firefox). Leave NVDA's "automatically set system focus to focusable elements" and automatic focus-mode switching at defaults first, then repeat once with automatic focus-mode switching **off**.
+4. Keyboard only. For each equation `3x + 5 = 14`, `2x + 3 = 9`, `2(x + 3) = 10`, `x^2 = 4`, `(x + 1) / 2 = 3`: type it, press Explore, then press: Down, Down, Right, Up, Left, Home, Space, I, C, R, ?, Esc. After each key write down what was heard (copy NVDA's speech viewer or Orca's debug output if possible).
+5. At each boundary (Up on the root, Down on a leaf, Left on the first sibling, Right on the last) check the message is heard once and focus did not move.
+6. Check nothing is spoken twice, and with the page's own speech switched on in "speech" mode with the screen reader running, that you hear one voice at a time.
+7. Hold an arrow key down: selection should move and stop at the edge without a pile of repeated messages.
+8. Record failures and key conflicts in the tables at the bottom. Then work through sections 1 to 8.
+9. Do not tick any box that was not observed.
+
+### Known limitations
+
+- Not tested in any browser or screen reader (see above).
+- `createView` assumes the tree is fully expanded (guide A5).
+- `speechSynthesis` use is injected by the page; the choice between modes is open question Q1 (Member 5).
+- Selection styling and focus outline are CSS work for Member 5; the module only sets `data-selected`.
+- The explorer tree still comes from provisional mock ASTs until Member 1's parser lands.
+- A screen reader user who toggles to browse mode (NVDA+Space) will stop receiving the page's keys; this must be stated in the in-page help.
+
 ## How to use
 
 - Run the checklist once per screen reader + browser pair (record the pair in the results table).

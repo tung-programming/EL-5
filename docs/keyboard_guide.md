@@ -3,7 +3,7 @@
 Owner: Member 4
 Source of truth: plan.md §7.6 (explorer) and §7.8 (page). This file turns those sections into a precise spec that Member 5 can build the tree UI against.
 
-**Status:** specification only. Nothing here has been tested with NVDA or Orca yet. Section 7 lists what still has to be tested with real screen readers. Statements about screen-reader behaviour in sections 5 and 6 are design intent or expectations, marked as such.
+**Status (Phase 3):** the key logic is implemented in `static/explorer_keys.js` and covered by automated tests (section 9). It is not yet wired into the page and **nothing here has been tested with NVDA or Orca**. Section 7 lists what still has to be tested with real screen readers. Statements about screen-reader behaviour in sections 5 and 6 are design intent or expectations, marked as such.
 
 ## 1. Mathematical node roles
 
@@ -82,12 +82,12 @@ Boundary messages are short, are spoken through the live region, and never move 
 | ← on the first part at a level | Stay | "This is the first part at this level." |
 | → on the last part at a level | Stay | "This is the last part at this level." |
 | `Home` on the whole equation | Stay | "Already at the whole equation." |
-| `Home` anywhere else | Focus moves to the root, then the root's quick text is read | (root quick text) |
-| `R` | Reads the root's quick text. Focus does **not** move | (root quick text) |
+| `Home` anywhere else | Focus moves to the root. The screen reader speaks the root's accessible name because focus moved; the page adds no second announcement (see Phase 3 clarifications below) | (root name, spoken by focus) |
+| `R` | Reads the whole equation. Focus does **not** move | (root detailed text, see Phase 3 clarifications) |
 | Esc | Tree is hidden or collapsed, focus returns to the Explore button, tree state is discarded | "Left the explorer." |
 | Explore pressed with an empty box | Explorer does not open, focus stays on the box | The parser's error message |
 | Explore pressed with unparseable input | Explorer does not open | The parser's spoken error (plan §7.1) |
-| Re-opening the explorer | Focus starts on the whole equation, never on the previous position | (root quick text) |
+| Re-opening the explorer | Focus starts on the whole equation, never on the previous position | Opening announcement (section 5) |
 | `?` | Reads the key list, focus does not move. Pressing `?` again repeats it | See section 4 |
 
 On a part that is an only child, ← and → both say "This is the only part at this level."
@@ -120,7 +120,7 @@ This is what the page should expose. It follows the standard ARIA tree pattern, 
 
 | Event | What the student should hear |
 |---|---|
-| Explorer opens | "Equation explorer. [root quick text]. Press question mark for keys." Focus is on the root |
+| Explorer opens | "Equation explorer. [root detailed text] Press question mark for keys." Focus is on the root |
 | Arrow key moves | The new part's quick text, plus level and position as given by the screen reader |
 | Space | Quick text again (live region) |
 | `I` | Detailed text (live region) |
@@ -128,9 +128,30 @@ This is what the page should expose. It follows the standard ARIA tree pattern, 
 | Boundary | The message from section 3 |
 | Esc | "Left the explorer." and focus is on the Explore button |
 
+### Phase 3 clarifications (not key changes)
+
+No key assignment differs from plan §7.6. Two message details were corrected because the Phase 1 and 2 explorer text made the original wording wrong:
+
+1. **`R` and the opening announcement use the root's `spoken_detailed`, not `spoken_quick`.** The root's quick text is only "Equation", which does not read the equation. The detailed text is "The whole equation. It says that the left side, 3x plus 5, has the same value as the right side, 14." That is what plan §7.6 means by "Read the whole equation again".
+2. **`Home` does not add a live-region announcement.** Focus moving to the root already makes the screen reader speak the item's name. Adding the root's text as well would be the double announcement that T8 and T9 are meant to rule out.
+
+Also decided in Phase 3 (documented, no new keys):
+
+- **Auto-repeat.** A held key (`event.repeat`) keeps moving the selection but does not queue boundary, reading or help messages again. The key is still swallowed.
+- **Esc is final.** After Esc the controller ignores every key until the explorer is opened again, so a second Esc cannot fire twice.
+- **Shift.** Shift and Caps Lock are ignored, so `I` and `i` are the same key. Ctrl, Alt and Meta pass through untouched.
+- **Mouse or Tab focus.** If focus lands on a tree item another way, the selection follows it.
+- **Help panel.** `?` also shows a visible key list (a `role="group"` panel, hidden again on the next handled key), as section 4 requires.
+
 ### Speech and screen reader at the same time
 
-Plan §7.8 says speech uses the browser's `speechSynthesis`. Screen-reader users must not hear two voices at once. Proposal for Member 5 to confirm:
+Plan §7.8 says speech uses the browser's `speechSynthesis`. Screen-reader users must not hear two voices at once. Implemented in `createView` as the `mode` option (the page still has to choose the mode, Q1):
+
+- `"screen-reader"` (default): the screen reader speaks movement (focus + accessible name) and the live region carries everything else. `speechSynthesis` is never called.
+- `"speech"`: for a student with no screen reader. The page speaks through `speechSynthesis`, cancelling anything in progress first, and the live region is not written.
+- Every event produces at most one spoken string in exactly one channel.
+
+Original proposal, kept for reference:
 
 - Arrow movement is spoken by the **screen reader** (via focus and the accessible name). The page does not also call `speechSynthesis` for it.
 - Space / `I` / `C` / `R` / `?` text goes to the live region (screen reader speaks it). `speechSynthesis` is used for these only if the student has turned on the page's own speech (Repeat / Stop / speed controls) and is not using a screen reader. How the page knows is open question Q1 in section 8.
@@ -202,3 +223,44 @@ For teammates to confirm. Nothing here changes `docs/contracts.md`; if any answe
 | Q1 | How does the page decide between the screen reader speaking and `speechSynthesis` speaking (section 5)? | M5 |
 | Q2 | Is there a visible "Keys" button as well as `?`? | M5 |
 | Q3 | Is Explore a button that opens the tree below the input, or a separate view? This guide assumes the former | M5 |
+
+## 9. Implementation (Phase 3)
+
+File: `static/explorer_keys.js` (Member 4). `static/app.js`, `index.html` and `style.css` are unchanged and remain Member 5's. The module has no dependencies and works as `window.ExplorerKeys` or `require()`.
+
+### Integration interface for Member 5
+
+```js
+// tree = the ExplorerNode tree from POST /api/parse-expression
+const view = ExplorerKeys.createView(treeContainerEl, tree, {
+  mode: "screen-reader",          // or "speech" (then pass speak / cancelSpeech)
+  liveRegion: exploreLiveEl,      // optional; created if omitted. Separate from the result region
+  onExit() { exploreButton.focus(); },
+  // speak: (t) => speechSynthesis.speak(new SpeechSynthesisUtterance(t)),
+  // cancelSpeech: () => speechSynthesis.cancel(),
+});
+view.open();                       // focus to root + opening announcement
+```
+
+- `createView` throws on a malformed tree. Catch it and show a spoken error instead of opening the explorer.
+- Needs from Member 5 (CSS): a visible, non-colour-only marker for `[data-selected="true"]` (for example a thick outline plus a symbol), and a visible focus style on `[role="treeitem"]`. The module adds no styles except hiding its own live region.
+- Needs from Member 5 (page): after Explore parses the input successfully, call `open()`. Parser errors must be handled by the page before this module is involved.
+- Explorer keys act only inside the tree container because the listener is on it, which satisfies rule 1 (typing in the text boxes is never affected).
+- `ExplorerKeys.createController(tree)` can be used without the DOM adapter. `handleKey(event)` returns `{handled, preventDefault, action, moved, exit, announce, focusText, focusId, selection}`.
+
+### Key to action map
+
+| Key | Action id | Result |
+|---|---|---|
+| ArrowUp | `parent` | focus parent, or boundary message |
+| ArrowDown | `firstChild` | focus first child, or boundary message |
+| ArrowLeft / ArrowRight | `previousSibling` / `nextSibling` | focus sibling, or boundary message |
+| Space | `quick` | announce `spoken_quick` |
+| I | `detailed` | announce `spoken_detailed` |
+| C | `context` | announce `spoken_context` |
+| R | `readAll` | announce root `spoken_detailed`, no focus move |
+| Home | `root` | focus root, or "Already at the whole equation." |
+| ? | `help` | announce key list, show help panel |
+| Escape | `exit` | "Left the explorer.", `onExit()` |
+
+Anything else is unhandled and not prevented. If a node has an empty or missing text field the announcement is "No explanation is available for this part." rather than silence.
