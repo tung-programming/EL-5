@@ -2,18 +2,35 @@
 
 Owner: Member 2
 
-Contract version: 1.0 (PRD v4; 12 November 2026)
+Contract version: 1.1 (PRD v4; 12 November 2026)
+
+Changes:
+- 1.1: OwnAST nodes gain `implicit` and `typed`. Number `value` is rounded to 4 decimal places. Scope is classes 1–5, linear equations.
 
 These JSON contracts are shared by the Python backend, CLI, API, and frontend. Keep serialized mathematical values as strings; never put SymPy/Python objects in JSON. A change to a frozen field, meaning, or allowed value requires agreement from the team.
 
 ## OwnAST node
 
-Each node has required `type`, `children`, and `span`; `value` is optional and is `null` when the node has no payload. `children` are ordered in the same order as the source expression. `span` is a half-open `[start, end]` range of zero-based character offsets in the original input (end is exclusive). An `Equation` has exactly two children, left side then right side. `Group` has one child and preserves explicit parentheses.
+Each node has required `type`, `value`, `children`, `span`, `implicit`, and `typed`. `value` is `null` when the node has no payload. `children` are ordered in the same order as the source expression. `span` is a half-open `[start, end]` range of zero-based character offsets in the original input (end is exclusive). An `Equation` has exactly two children, left side then right side. `Group` has one child and preserves explicit parentheses.
 
-Allowed types are `Number`, `Variable`, `Add`, `Sub`, `Mul`, `Div`, `Pow`, `Neg`, `Group`, and `Equation`. Number and Variable carry their source spelling in `value`; operator and grouping nodes use null. Binary operators have two children, `Neg` and `Group` one, and leaves none.
+Allowed types are `Number`, `Variable`, `Add`, `Sub`, `Mul`, `Div`, `Pow`, `Neg`, `Group`, and `Equation`. Binary operators have two children, `Neg` and `Group` one, and leaves none.
+
+| Field | Meaning |
+|---|---|
+| `value` | `Number`: the digits as typed (`"3"`, `"2.5"`, `".5"`). If the student typed more than 4 decimal places, the value is rounded to 4 (5 rounds up), e.g. `"3.1416"`. `Variable`: always `"x"`, even if `X` was typed. Every other type: `null` |
+| `implicit` | `true` only for a `Mul` written without a sign (`3x`, `2(x+1)`); `false` for `3*x` and for every other node. Lets the explorer and speech say "three x" instead of "three times x" |
+| `typed` | `Number` only: the original text when `value` was rounded (`"3.14159"`); otherwise `null`. Lets the app say "I rounded 3.14159 to 3.1416" |
+
+Example: `3x + 5 = 14`
 
 ```json
-{"type":"Equation","value":null,"children":[{"type":"Add","value":null,"children":[{"type":"Mul","value":null,"children":[{"type":"Number","value":"3","children":[],"span":[0,1]},{"type":"Variable","value":"x","children":[],"span":[1,2]}],"span":[0,2]},{"type":"Number","value":"5","children":[],"span":[5,6]}],"span":[0,6]},{"type":"Number","value":"14","children":[],"span":[9,11]}],"span":[0,11]}
+{"type":"Equation","value":null,"children":[{"type":"Add","value":null,"children":[{"type":"Mul","value":null,"children":[{"type":"Number","value":"3","children":[],"span":[0,1],"implicit":false,"typed":null},{"type":"Variable","value":"x","children":[],"span":[1,2],"implicit":false,"typed":null}],"span":[0,2],"implicit":true,"typed":null},{"type":"Number","value":"5","children":[],"span":[5,6],"implicit":false,"typed":null}],"span":[0,6],"implicit":false,"typed":null},{"type":"Number","value":"14","children":[],"span":[9,11],"implicit":false,"typed":null}],"span":[0,11],"implicit":false,"typed":null}
+```
+
+Example with rounding: `x = 3.14159`
+
+```json
+{"type":"Equation","value":null,"children":[{"type":"Variable","value":"x","children":[],"span":[0,1],"implicit":false,"typed":null},{"type":"Number","value":"3.1416","children":[],"span":[4,11],"implicit":false,"typed":"3.14159"}],"span":[0,11],"implicit":false,"typed":null}
 ```
 
 Additional equation examples (shown as source → tree shape):
