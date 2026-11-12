@@ -12,8 +12,12 @@
  *     tree, roving tabindex, live region and help panel, and applies the
  *     controller's results. NOT yet verified in a real browser or with NVDA/Orca.
  *
- * `tree` is the ExplorerNode tree from engine/explore.py (plan.md §10):
+ * `tree` is the ExplorerNode tree from engine/explore.py, the ExplorerNode of
+ * docs/contracts.md (the authoritative shared contract):
  *   {id, type, role, value, spoken_quick, spoken_detailed, spoken_context, children[]}
+ * There is no span. This module needs only `id` (unique string) and `children`;
+ * `role` and the three spoken_* strings are used when present, and any other
+ * field is ignored.
  *
  * Announcement strategy (one voice at a time):
  *   Every event produces AT MOST ONE spoken string, delivered through exactly ONE

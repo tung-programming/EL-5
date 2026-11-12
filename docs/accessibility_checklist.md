@@ -52,7 +52,7 @@ Everything in sections 1 to 8 below, in particular keyboard_guide T1 to T14. The
 - `createView` assumes the tree is fully expanded (guide A5).
 - `speechSynthesis` use is injected by the page; the choice between modes is open question Q1 (Member 5).
 - Selection styling and focus outline are CSS work for Member 5; the module only sets `data-selected`.
-- The explorer tree still comes from provisional mock ASTs until Member 1's parser lands.
+- The explorer tree still comes from hand-written mock ASTs that follow `docs/contracts.md`, until Member 1's parser lands. No real parser output has been explored.
 - AltGr handling relies on `getModifierState("AltGraph")`. Real Ctrl+Alt combinations on AltGr layouts may also report AltGraph, so shortcut pass-through is not guaranteed there. Not verified across real browsers and keyboard layouts. Letter keys I, C, R match the typed character, so they do not work on layouts that do not produce those letters.
 - Chrome is reported to sometimes drop an utterance spoken straight after `speechSynthesis.cancel()` (speech mode only). Unverified here.
 - In screen-reader mode, opening and leaving the explorer both move focus and write the live region, so a screen reader may speak the focus change and the live text one after the other (or cut one off). Needs checking with NVDA and Orca.

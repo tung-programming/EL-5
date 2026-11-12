@@ -686,12 +686,12 @@ test("M3: each action uses exactly one channel", () => {
 // ---- M4: role-based names ---------------------------------------------------
 
 test("M4: view labels fall back to the role, not a generic sentence", () => {
-  const tree = { id: "a", role: "equation", children: [{ id: "b", role: "constant_term", children: [] }, { id: "c", children: [] }] };
+  const tree = { id: "a", role: "equation", children: [{ id: "b", role: "group_multiplier", children: [] }, { id: "c", children: [] }] };
   const m = mount(tree);
   assert.equal(m.byId.a.attrs["aria-label"], "Equation");
-  assert.equal(m.byId.b.attrs["aria-label"], "Constant term");
+  assert.equal(m.byId.b.attrs["aria-label"], "Group multiplier");
   assert.equal(m.byId.c.attrs["aria-label"], EK.MESSAGES.FALLBACK_NAME);
-  assert.equal(m.byId.b.children[0].textContent, "Constant term");
+  assert.equal(m.byId.b.children[0].textContent, "Group multiplier");
   for (const el of Object.values(m.byId)) assert.doesNotMatch(el.attrs["aria-label"], /No explanation/i);
 });
 
@@ -907,4 +907,63 @@ test("ARIA: selection and tab stop stay synchronised through a long key sequence
     assert.equal(m.doc.activeElement, m.byId[id], k);
     assert.equal(Object.values(m.byId).filter((e) => e.attrs.tabindex === "0").length, 1, k);
   }
+});
+
+// ---- docs/contracts.md ExplorerNode: only the shared fields are used -------------
+
+const CONTRACT_FIELDS = ["children", "id", "role", "spoken_context", "spoken_detailed", "spoken_quick", "type", "value"];
+
+function allNodes(node, out) {
+  out = out || [];
+  out.push(node);
+  node.children.forEach((k) => allNodes(k, out));
+  return out;
+}
+
+test("CONTRACT: the stored engine trees have exactly the shared ExplorerNode fields and no span", () => {
+  for (const [name, tree] of Object.entries(TREES)) {
+    for (const n of allNodes(tree)) {
+      assert.deepEqual(Object.keys(n).sort(), CONTRACT_FIELDS, name + " " + n.id);
+      assert.equal(n.span, undefined, name + " " + n.id);
+      assert.ok(n.value === null || typeof n.value === "string", name + " " + n.id + " value is a string or null");
+    }
+  }
+});
+
+test("CONTRACT: every node of every stored tree is reachable with the arrow keys alone", () => {
+  for (const [name, tree] of Object.entries(TREES)) {
+    const c = EK.createController(tree);
+    const seen = [tree.id];
+    // depth-first walk using only Down / Right / Up
+    const visit = (node) => {
+      node.children.forEach((k, i) => {
+        const r = c.handleKey(key(i === 0 ? "ArrowDown" : "ArrowRight"));
+        assert.equal(r.focusId, k.id, name);
+        seen.push(k.id);
+        visit(k);
+        // return focus to this child before moving to its next sibling
+        while (c.getFocusId() !== k.id) assert.equal(c.handleKey(key("ArrowUp")).moved, true, name);
+      });
+    };
+    visit(tree);
+    assert.deepEqual(seen.sort(), allNodes(tree).map((n) => n.id).sort(), name);
+  }
+});
+
+test("CONTRACT: the keyboard module ignores any span and value an upstream tree might still carry", () => {
+  const withExtras = JSON.parse(JSON.stringify(T));
+  allNodes(withExtras).forEach((n) => { n.span = [0, 1]; n.extra = "x"; });
+  const plain = EK.createController(T);
+  const extra = EK.createController(withExtras);
+  for (const k of ["ArrowDown", "ArrowDown", "ArrowRight", "i", "c", "r", "Home", "ArrowUp", "?"]) {
+    const a = plain.handleKey(key(k)), b = extra.handleKey(key(k));
+    assert.deepEqual([b.focusId, b.announce, b.moved], [a.focusId, a.announce, a.moved], k);
+  }
+});
+
+test("CONTRACT: a tree with only id and children is enough (the other fields are optional for the keys)", () => {
+  const minimal = { id: "a", children: [{ id: "b", children: [] }, { id: "c", children: [] }] };
+  const c = EK.createController(minimal);
+  assert.equal(c.handleKey(key("ArrowDown")).focusId, "b");
+  assert.equal(c.handleKey(key("ArrowRight")).focusId, "c");
 });

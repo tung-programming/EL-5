@@ -1,36 +1,38 @@
 """Mock OwnAST fixtures for explorer development (test-only).
 
 Owner: Member 4
-Shape follows plan.md §10:  OwnAST = {type, value?, children[], span:[start,end]}
+Shape follows docs/contracts.md (the authoritative shared contract):
+    OwnAST = {type, value?, children[], span:[start, end]}
 
 These are hand-written stand-ins until Member 1's parser (engine/parser.py)
 lands, and they are NOT a statement of what the real parser outputs.
-Assumptions for Member 1 / Member 2 to confirm:
+From docs/contracts.md:
   - span is [start, end) in characters of the source string (end exclusive)
-  - `value` exists only on Number (a number) and Variable ("x"); other nodes omit it
-  - implicit multiplication (3x) is a Mul node whose span covers both factors
-  - Equation.children is [left, right]
-  - node type names are exactly: Number, Variable, Add, Sub, Mul, Pow, Group,
-    Equation (Phase 2 adds Sub, Pow, Group; plus the provisional Fraction)
+  - Number.value is the SOURCE SPELLING, a string ("3", "14"); Variable.value is
+    "x"; every other node omits `value` (the contract also allows null)
+  - Equation.children is [left, right]; Group has one child; Div has two
+  - node type names are exactly: Number, Variable, Add, Sub, Mul, Div, Pow,
+    Neg, Group, Equation
 
-Phase 2 assumptions (all provisional, isolated here):
-  - Group has exactly one child (the expression inside the brackets) and its
-    span INCLUDES the brackets; the child's span excludes them
+Not stated in docs/contracts.md (Member 4 assumptions, to confirm with Member 1):
+  - implicit multiplication (3x) is a Mul node whose span covers both factors
+  - Group's span INCLUDES the brackets; the child's span excludes them
   - Pow children are [base, exponent]; the span of "x^2" covers "x^2"
   - a Group directly beside another node ("2(x + 3)") is a Mul of the two
-  - Fraction is NOT in plan.md's OwnAST type list. It is a provisional node
-    {type: "Fraction", children: [numerator, denominator]} so the explorer has
-    something to attach the fraction roles to. Its span covers the whole
-    "numerator/denominator" text; when the numerator was typed in brackets,
-    e.g. "(x + 1)/2", the span includes the brackets and the numerator's own
-    span excludes them (there is no Group node, the brackets only delimit it)
+  - Div is used for stacked fractions too: there is no Fraction node. Its span
+    covers the whole "numerator/denominator" text; when the numerator was typed
+    in brackets, e.g. "(x + 1)/2", the span includes the brackets and the
+    numerator's own span excludes them (there is no Group node, the brackets
+    only delimit it)
 """
 
 from __future__ import annotations
 
 
 def _num(value, start, end):
-    return {"type": "Number", "value": value, "children": [], "span": [start, end]}
+    """A Number leaf. `value` is the SOURCE SPELLING, a string (docs/contracts.md);
+    an int is accepted here for brevity and spelled with str()."""
+    return {"type": "Number", "value": str(value), "children": [], "span": [start, end]}
 
 
 def _var(start, end):
@@ -222,14 +224,14 @@ AST_GROUP_SQUARED = _node(
     13,
 )
 
-# "(x + 1)/2 = 3"     provisional Fraction with a sum as numerator
+# "(x + 1)/2 = 3"     Div (a fraction) with a sum as numerator
 #  0123456789ABC
 SRC_FRACTION_X_PLUS_1_OVER_2 = "(x + 1)/2 = 3"
 AST_FRACTION_X_PLUS_1_OVER_2 = _node(
     "Equation",
     [
         _node(
-            "Fraction",
+            "Div",
             [_node("Add", [_var(1, 2), _num(1, 5, 6)], 1, 6), _num(2, 8, 9)],
             0,
             9,
@@ -247,7 +249,7 @@ AST_FRACTION_OF_POWER = _node(
     "Equation",
     [
         _node(
-            "Fraction",
+            "Div",
             [_node("Pow", [_var(0, 1), _num(2, 2, 3)], 0, 3), _num(3, 4, 5)],
             0,
             5,
@@ -269,7 +271,7 @@ AST_GROUPED_FRACTION_SQUARED = _node(
             [
                 _node(
                     "Group",
-                    [_node("Fraction", [_var(1, 2), _num(2, 3, 4)], 1, 4)],
+                    [_node("Div", [_var(1, 2), _num(2, 3, 4)], 1, 4)],
                     0,
                     5,
                 ),
@@ -285,9 +287,9 @@ AST_GROUPED_FRACTION_SQUARED = _node(
 )
 
 # ---------------------------------------------------------------------------
-# Review fixtures: structures combined, repeated or nested. Same provisional
+# Review fixtures: structures combined, repeated or nested. Same
 # conventions as above (spans are [start, end) in the source string; a
-# Fraction whose numerator/denominator was typed in brackets spans the brackets
+# Div whose numerator/denominator was typed in brackets spans the brackets
 # while its operand's own span does not).
 # ---------------------------------------------------------------------------
 
@@ -318,7 +320,7 @@ AST_MULTIPLIED_SQUARED_GROUP_MINUS_FRACTION = _node(
                     10,
                 ),
                 _node(
-                    "Fraction",
+                    "Div",
                     [_node("Sub", [_var(14, 15), _num(1, 18, 19)], 14, 19), _num(4, 21, 22)],
                     13,
                     22,
@@ -420,7 +422,7 @@ AST_FRACTION_OF_SUM_OVER_DIFFERENCE = _node(
     "Equation",
     [
         _node(
-            "Fraction",
+            "Div",
             [
                 _node("Add", [_node("Mul", [_num(2, 1, 2), _var(2, 3)], 1, 3), _num(1, 6, 7)], 1, 7),
                 _node("Sub", [_var(10, 11), _num(3, 14, 15)], 10, 15),
@@ -440,13 +442,13 @@ AST_NESTED_FRACTIONS = _node(
     "Equation",
     [
         _node(
-            "Fraction",
+            "Div",
             [
                 _node(
                     "Add",
                     [
                         _node(
-                            "Fraction",
+                            "Div",
                             [_node("Add", [_var(2, 3), _num(1, 6, 7)], 2, 7), _num(2, 9, 10)],
                             1,
                             10,
@@ -542,10 +544,9 @@ FIXTURES = {
     "(x/2)^2=9": (SRC_GROUPED_FRACTION_SQUARED, AST_GROUPED_FRACTION_SQUARED),
 }
 
-# Node types the fixtures use. Div is not used by any fixture (the tests build
-# it inline); Neg appears only in the quadratic review fixture.
+# Node types the fixtures use. Neg appears only in the quadratic review fixture.
 FIXTURE_NODE_TYPES = {
-    "Number", "Variable", "Add", "Sub", "Mul", "Pow", "Group", "Fraction", "Neg",
+    "Number", "Variable", "Add", "Sub", "Mul", "Pow", "Group", "Div", "Neg",
     "Equation",
 }
 

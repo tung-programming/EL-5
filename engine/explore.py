@@ -1,49 +1,37 @@
 """OwnAST -> explorer tree with roles and quick/detailed/context text.
 
 Owner: Member 4
-See plan.md §7.6
+See plan.md §7.6 and docs/contracts.md (the authoritative shared contract).
 
-PROVISIONAL CONTRACT (Phase 1, standalone)
-------------------------------------------
-Member 1's parser and Member 2's docs/contracts.md do not exist yet, so this
-module reads the mock AST shape used in tests/explorer_fixtures.py:
-
-    OwnAST   = {type, value?, children[], span:[start, end]}   (end exclusive)
-    types    = Number, Variable, Add, Sub, Mul, Div, Pow, Neg, Group,
-               Equation   (+ the provisional Fraction type, see below)
-    value    = number for Number, "x" for Variable, absent otherwise
+Input: the OwnAST of docs/contracts.md
+----------------------------------------
+    OwnAST = {type, value?, children[], span:[start, end]}   (end exclusive)
+    types  = Number, Variable, Add, Sub, Mul, Div, Pow, Neg, Group, Equation
+    value  = Number: its SOURCE SPELLING as a string ("3", "14", "2.50");
+             Variable: its name ("x"); every other type: absent or null
     Equation = exactly two children, [left, right]
     Group    = exactly one child: the expression inside the brackets
     Pow      = [base, exponent]
+    Div      = [numerator, denominator]
 
-PROVISIONAL (Phase 2): Fraction
--------------------------------
-plan.md section 7.6 lists a "Fraction" role for `a / b`, but the plan's OwnAST
-type list has only Div and no Fraction node, and docs/contracts.md is still
-empty. So:
+There is no Fraction node type: Div is both inline division and a stacked
+fraction, and every Div gets the fraction roles below. A Number is never
+negative: a leading minus is a Neg node.
 
-  * Div keeps its Phase 1 meaning: inline division, role "operator", quick
-    text "Division". Nothing about Div changed.
-  * A separate, provisional node type `Fraction` = [numerator, denominator]
-    gets the fraction roles. It is the stacked (a over b) reading of a
-    division. If Member 1 / Member 2 decide the parser should emit Div for
-    stacked fractions, the one-line fix is to map Div to Fraction in
-    `_read_node`; no other code depends on this choice.
-
-Output node (plan.md §10 ExplorerNode, plus one extra field, `span`):
-
+Output: the ExplorerNode of docs/contracts.md
+----------------------------------------------
     {id, type, role, value, spoken_quick, spoken_detailed, spoken_context,
-     span, children[]}
+     children[]}
 
-`span` is NOT in the plan §10 ExplorerNode. It is kept because source
-positions must be preserved; drop it if Member 2's contract leaves it out.
+`value` is the display string (a Number's source spelling, a Variable's name)
+or None. The source `span` is validated but is NOT part of the output.
 
-Everything that depends on the AST representation lives in the "reading the
-AST" section. If the real contract differs, adapt `_read_node` only.
-Operator-type nodes (Add, Sub, Mul, Div, Neg) take the "operator" role.
-Phase 2 roles: Group -> "group"; Pow -> "power"; Fraction -> "fraction".
+`role` is a free-text label in the shared contract (it only lists examples), so
+the role vocabulary below is Member 4's, documented in docs/explorer_contract.md.
+Operator-type nodes (Add, Sub, Mul, Neg) take the "operator" role.
+Group -> "group"; Pow -> "power"; Div -> "fraction".
 A bare Number in a special position gets a position role instead of the
-"constant_term" / "coefficient" / "number" fallbacks:
+"constant" / "coefficient" / "number" fallbacks:
     multiplying a Group      -> "group_multiplier"   (2 in 2(x + 3))
     base of a Pow            -> "base"               (2 in 2^3)
     exponent of a Pow        -> "exponent"           (2 in x^2)
@@ -52,11 +40,15 @@ Anything else in those positions (a Variable, a Group, an operator...) keeps
 its own role, and its position is stated in its detailed and context text.
 The two children of an Equation take "left_side" / "right_side" instead, since
 the side role wins for the top node of a side (docs/keyboard_guide.md A2).
+
+Everything that depends on the AST representation lives in the "reading the
+AST" section. If the contract changes, adapt `_read_node` only.
 """
 
 from __future__ import annotations
 
-import math
+import re
+from decimal import Decimal
 from typing import Any, NamedTuple, Optional
 
 __all__ = ["ExplorerError", "build_explorer_tree"]
@@ -80,14 +72,18 @@ EQUATION = "Equation"
 NUMBER = "Number"
 VARIABLE = "Variable"
 GROUP = "Group"
-FRACTION = "Fraction"  # PROVISIONAL node type, see module docstring
+DIV = "Div"  # inline division AND stacked fraction: one node type (docs/contracts.md)
+
+# Source spelling of a Number: ASCII digits with an optional decimal point, as the
+# tokenizer of plan.md §7.1 allows ("3", "2.50", ".5"). No sign (a minus is a Neg
+# node), no exponent, no spaces, no separators, no non-ASCII digits.
+_NUMBER_SPELLING = re.compile(r"[0-9]+(?:\.[0-9]*)?|\.[0-9]+")
 
 # node type -> (number of children required, spoken name, detailed action)
 _OPERATORS = {
     "Add": (2, "Addition", "It adds its two parts together."),
     "Sub": (2, "Subtraction", "It subtracts the second part from the first."),
     "Mul": (2, "Multiplication", "It multiplies its two parts together."),
-    "Div": (2, "Division", "It divides the first part by the second."),
     "Pow": (2, "Power", "It raises the first part to the power of the second."),
     "Neg": (1, "Negation", "It changes the sign of the part inside it."),
 }
@@ -99,7 +95,7 @@ ROLE_LEFT = "left_side"
 ROLE_RIGHT = "right_side"
 ROLE_COEFFICIENT = "coefficient"
 ROLE_VARIABLE = "variable"
-ROLE_CONSTANT = "constant_term"
+ROLE_CONSTANT = "constant"  # the name used in docs/contracts.md
 ROLE_OPERATOR = "operator"
 ROLE_GROUP = "group"
 ROLE_GROUP_MULTIPLIER = "group_multiplier"
@@ -152,10 +148,15 @@ def _read_node(node: Any, path: str) -> _Ast:
 
     value = node.get("value")
     if node_type == NUMBER:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ExplorerError(f"{path}: Number needs a numeric 'value'")
-        if isinstance(value, float) and not math.isfinite(value):
-            raise ExplorerError(f"{path}: Number 'value' must be finite")
+        if not isinstance(value, str):
+            raise ExplorerError(
+                f"{path}: Number needs its source spelling as a string 'value', such as '3'"
+            )
+        if _NUMBER_SPELLING.fullmatch(value) is None:
+            raise ExplorerError(
+                f"{path}: Number 'value' {value!r} is not a plain decimal number "
+                "(digits with an optional decimal point)"
+            )
     elif node_type == VARIABLE:
         if not isinstance(value, str) or not value:
             raise ExplorerError(f"{path}: Variable needs a 'value' such as 'x'")
@@ -173,7 +174,7 @@ def _read_node(node: Any, path: str) -> _Ast:
 def _expected_child_count(node_type: str, path: str) -> Optional[int]:
     if node_type in (NUMBER, VARIABLE):
         return 0
-    if node_type in (EQUATION, FRACTION):
+    if node_type in (EQUATION, DIV):
         return 2
     if node_type == GROUP:
         return 1
@@ -234,7 +235,7 @@ def _determine_role(node: _Ast, ctx: _Ctx) -> str:
         return ROLE_VARIABLE
     if node.type == GROUP:
         return ROLE_GROUP
-    if node.type == FRACTION:
+    if node.type == DIV:
         return ROLE_FRACTION
     if node.type == "Pow":
         return ROLE_POWER
@@ -244,7 +245,7 @@ def _determine_role(node: _Ast, ctx: _Ctx) -> str:
     parent = ctx.parent
     if parent is not None and parent.type == "Pow":
         return ROLE_BASE if ctx.index == 0 else ROLE_EXPONENT
-    if parent is not None and parent.type == FRACTION:
+    if parent is not None and parent.type == DIV:
         return ROLE_NUMERATOR if ctx.index == 0 else ROLE_DENOMINATOR
     if parent is not None and parent.type == "Mul":
         others = [s for i, s in enumerate(ctx.siblings) if i != ctx.index]
@@ -285,12 +286,16 @@ _LEAVES = {NUMBER, VARIABLE}
 
 
 def _say(type_: str, value: Any) -> str:
-    """Plain-word value of a Number/Variable."""
-    if type_ == VARIABLE:
-        return str(value)
-    if isinstance(value, float) and value.is_integer():
-        value = int(value)
-    return f"negative {abs(value)}" if value < 0 else str(value)
+    """Spoken value of a Number/Variable: the source spelling, unchanged ("2.50"
+    stays "2.50"). A Number is never negative, so there is no sign to speak."""
+    return str(value)
+
+
+def _whole_number(value: str) -> Optional[Decimal]:
+    """The exact value of a Number spelling if it is a whole number ("2", "2.0",
+    "02"), else None. Decimal, not int/float: no overflow, no rounding."""
+    d = Decimal(value)
+    return d if d == d.to_integral_value() else None
 
 
 def _say_value(node: _Ast) -> str:
@@ -328,17 +333,17 @@ def _needs_group(child: dict, parent_type: str, index: int) -> bool:
     """Would reading `child` inside `parent` without a marker be ambiguous?"""
     ct = child["type"]
     if ct in _LEAVES:
-        return parent_type == "Pow" and index == 0 and ct == NUMBER and child["value"] < 0
-    if ct in (GROUP, FRACTION):
+        return False  # a Number is never negative, so a leaf never needs a group
+    if ct in (GROUP, DIV):
         return False  # their own wording ("the group ...") already delimits them
     if parent_type in ("Neg", "Mul"):
         return ct in _SUM_TYPES
     if parent_type == "Sub":
         return index == 1 and ct in _SUM_TYPES
-    if parent_type in ("Div", FRACTION):
-        return ct in _SUM_TYPES or (index == 1 and ct in ("Mul", "Div"))
+    if parent_type == DIV:
+        return ct in _SUM_TYPES or (index == 1 and ct == "Mul")
     if parent_type == "Pow":
-        return index == 0 or ct in _SUM_TYPES | {"Mul", "Div"}
+        return index == 0 or ct in _SUM_TYPES | {"Mul"}
     return False
 
 
@@ -368,7 +373,7 @@ def _ends_open(d: dict, mark: bool = False) -> bool:
     t = d["type"]
     if t == GROUP:
         return not mark
-    if t in (FRACTION, "Pow"):
+    if t in (DIV, "Pow"):
         return True
     if t in _LEAVES:
         return False
@@ -384,7 +389,7 @@ def _phrase(d: dict, mark: bool = False) -> str:
     if t == GROUP:
         inner = _phrase(d["children"][0], mark)
         return f"the group {inner} {END_GROUP}" if mark else f"the group {inner}"
-    if t == FRACTION:
+    if t == DIV:
         num, den = d["children"]
         # a comma keeps "and denominator" from being read as part of the numerator
         sep = "," if _ends_open(num, mark) else ""
@@ -402,13 +407,12 @@ def _phrase(d: dict, mark: bool = False) -> str:
         "Add": "plus",
         "Sub": "minus",
         "Mul": "times",
-        "Div": "divided by",
         "Pow": "to the power of",
     }[t]
     left = _child_phrase(d, 0, mark)
     first = d["children"][0]
     if _ends_open(first, mark) and (
-        t != "Pow" or first["type"] == FRACTION or (first["type"] == GROUP and not mark)
+        t != "Pow" or first["type"] == DIV or (first["type"] == GROUP and not mark)
     ):
         # "x to the power of 2, plus 3" / "the group x plus 3, times 2": the
         # pause stops what follows sounding like part of the first operand.
@@ -434,13 +438,12 @@ def _label(d: dict) -> str:
         return f"the variable {d['value']}"
     if t == "Neg":
         return f"the negation of {_child_phrase(d, 0)}"
-    if t in (GROUP, FRACTION):
+    if t in (GROUP, DIV):
         return _phrase(d)  # already starts with "the group" / "the fraction"
     if t == "Mul" and _is_number_times_variable(d):
         return f"the term {_phrase(d)}"
     noun = {
-        "Add": "sum", "Sub": "difference", "Mul": "product",
-        "Div": "quotient", "Pow": "expression",
+        "Add": "sum", "Sub": "difference", "Mul": "product", "Pow": "expression",
     }[t]
     return f"the {noun} {_phrase(d)}"
 
@@ -467,9 +470,7 @@ def _placement(node: dict, parent: dict, index: int) -> str:
         return f"has {label} subtracted from it" if index == 0 else f"is subtracted from {label}"
     if ptype == "Mul":
         return f"is multiplied by {label}"
-    if ptype == "Div":
-        return f"is divided by {label}" if index == 0 else f"divides {label}"
-    if ptype == FRACTION:
+    if ptype == DIV:
         if index == 0:
             return f"is the numerator of a fraction whose denominator is {_phrase(other)}"
         return f"is the denominator of a fraction whose numerator is {_phrase(other)}"
@@ -484,7 +485,7 @@ def _operation_sentence(node: dict) -> str:
     t = node["type"]
     if t == GROUP:
         return _group_sentence(node)
-    if t == FRACTION:
+    if t == DIV:
         return _fraction_sentence(node)
     if t == "Pow":
         return _power_sentence(node)
@@ -512,7 +513,7 @@ def _operation_sentence(node: dict) -> str:
                 m = _say(NUMBER, kids[other]["value"])
                 return f"{text} So {m} multiplies the {_entire(kids[g])}."
         return text
-    return f"{name}. It divides {a} by {b}."
+    raise AssertionError(f"unreachable operator {t}")  # Add/Sub/Mul handled above
 
 
 def _entire(group: dict) -> str:
@@ -545,11 +546,8 @@ def _power_sentence(node: dict) -> str:
     e = _child_phrase(node, 1)
     head = f"Power. The base is {b} and the exponent is {e}."
     b = _base_ref(b)
-    value = exp.get("value")
-    if exp["type"] == NUMBER and (
-        isinstance(value, int) or (isinstance(value, float) and value.is_integer())
-    ):
-        n = int(value)  # not float(value): a huge int would overflow
+    n = _whole_number(exp["value"]) if exp["type"] == NUMBER else None
+    if n is not None:
         if n == 2:
             return (
                 f"{head} {_start(b)} squared means {b} is multiplied by itself: "
@@ -561,7 +559,7 @@ def _power_sentence(node: dict) -> str:
                 f"{b} times {b} times {b}."
             )
         if n > 3:
-            return f"{head} It means {b} is used as a factor {n} times."
+            return f"{head} It means {b} is used as a factor {exp['value']} times."
     return f"{head} It means {b} is raised to the power {e}."
 
 
@@ -628,7 +626,7 @@ def _where_it_sits(node: dict, index: int, parent: Optional[dict]) -> str:
     fraction or a group, or a group anywhere. Empty for plain Phase 1 cases."""
     if parent is None or parent["type"] == EQUATION:
         return ""
-    if parent["type"] in ("Pow", FRACTION, GROUP):
+    if parent["type"] in ("Pow", DIV, GROUP):
         subject = "It"
     elif node["type"] == GROUP:
         subject = "The entire group"
@@ -658,12 +656,10 @@ def _position_number_detailed(node: dict, parent: Optional[dict]) -> str:
         )
     if role == ROLE_EXPONENT:
         b = _base_ref(_child_phrase(parent, 0))
-        exp = node["value"]
-        if isinstance(exp, float) and exp.is_integer():
-            exp = int(exp)
+        exp = _whole_number(node["value"])
         if exp == 2:
             meaning = f"It indicates that {b} is multiplied by itself."
-        elif isinstance(exp, int) and exp > 2:
+        elif exp is not None and exp > 2:
             meaning = f"It indicates that {b} is used as a factor {n} times."
         else:
             meaning = f"It is the power that {b} is raised to."
@@ -696,7 +692,7 @@ def _spoken_detailed(node: dict, index: int, parent: Optional[dict]) -> str:
     if role in (ROLE_LEFT, ROLE_RIGHT):
         side, where = ("left", "before") if role == ROLE_LEFT else ("right", "after")
         base = f"The {side} side of the equation, everything {where} the equals sign."
-        if t in _OPERATORS or t in (GROUP, FRACTION):
+        if t in _OPERATORS or t in (GROUP, DIV):
             return f"{base} It reads {_phrase(node, True)}. {_operation_sentence(node)}"
         return f"{base} It is just {_label(node)}."
     if role in (ROLE_OPERATOR, ROLE_POWER, ROLE_GROUP, ROLE_FRACTION):
@@ -766,7 +762,7 @@ def _spoken_context(node: dict, index: int, trail: list) -> str:
 
     side = "left" if trail[1][1] == 0 else "right"
     region = f"It is part of the {side} side of the equation."
-    if parent["type"] in (GROUP, "Pow", FRACTION):
+    if parent["type"] in (GROUP, "Pow", DIV):
         # the enclosing group / power / fraction already says (or its own
         # parent did) which side it is on; don't repeat it down the path
         region = ""
@@ -869,7 +865,6 @@ def _convert(node: _Ast, path: str, node_id: str, ctx: _Ctx, depth: int = 1) -> 
         "spoken_quick": _spoken_quick(node, role),
         "spoken_detailed": "",
         "spoken_context": "",
-        "span": list(node.span),
         "children": children,
     }
 
