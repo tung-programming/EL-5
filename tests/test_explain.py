@@ -1,6 +1,6 @@
 ﻿"""Phase 1 explanation tests; these do not perform verification."""
 
-from engine.explain import build_explanation
+from engine.explain import build_explanation, explain_step
 from engine.verifier import VerificationResult
 
 
@@ -138,3 +138,78 @@ def test_shared_response_has_concise_and_detailed_strings():
     assert isinstance(result["concise"], str)
     assert isinstance(result["detailed"], str)
     assert result["detailed"] == result["concise"]
+
+
+def test_explain_step_adapts_valid_verification_result():
+    verification = VerificationResult(
+        status="valid",
+        previous_solutions="{3}",
+        current_solutions="{3}",
+        reason="same set",
+    )
+
+    result = explain_step(verification)
+
+    assert result["concise"] == "Correct. Both equations have the same real solution set."
+
+
+def test_explain_step_adapts_invalid_verification_result():
+    verification = VerificationResult(
+        status="invalid",
+        previous_solutions="{3}",
+        current_solutions="{10/3}",
+        reason="different sets",
+    )
+
+    result = explain_step(verification)
+
+    assert "previous equation has solution x = 3" in result["concise"]
+    assert "current equation has solution x = 10/3" in result["concise"]
+
+
+def test_explain_step_adapts_unknown_verification_result():
+    verification = VerificationResult(
+        status="unknown",
+        previous_solutions="unknown",
+        current_solutions="unknown",
+        reason="out of scope",
+    )
+
+    assert explain_step(verification) == build_explanation("unknown")
+
+
+def test_explain_step_accepts_status_dictionary():
+    assert explain_step({"status": "valid"}) == build_explanation("valid")
+    assert explain_step({"status": "invalid"}) == build_explanation("invalid")
+
+
+def test_explain_step_handles_missing_or_unsupported_verification():
+    assert explain_step(None) == build_explanation("unknown")
+    assert explain_step({"status": "not-a-status"}) == build_explanation("unknown")
+
+
+def test_explain_step_accepts_inference_none():
+    verification = VerificationResult(
+        status="valid",
+        previous_solutions="{3}",
+        current_solutions="{3}",
+        reason="same set",
+    )
+
+    assert explain_step(verification, inference=None) == build_explanation(
+        "valid", verification=verification
+    )
+
+
+def test_explain_step_matches_build_explanation_for_equivalent_inputs():
+    verification = {"status": "valid"}
+    inference = {
+        "operation": "subtract",
+        "operand": "5",
+        "applied_to": "both_sides",
+    }
+
+    adapted = explain_step(verification, inference, mistake=None)
+    direct = build_explanation("valid", verification, inference, mistake=None)
+
+    assert adapted == direct

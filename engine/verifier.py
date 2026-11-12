@@ -182,3 +182,48 @@ def _compare_solution_sets(previous, current):
     if previous_is_subset is False or current_is_subset is False:
         return False
     return None
+
+
+def verify_step(previous, current) -> VerificationResult:
+    """Adapt parser outputs to the equation-based verifier interface.
+
+    ``previous`` and ``current`` may each be a two-item tuple/list of SymPy
+    expressions or an existing SymPy Equality. Raw strings and other values
+    are rejected; user text must go through the custom parser.
+    """
+    previous_equation, error = _as_equation(previous, "previous")
+    if error:
+        return _unknown(error)
+
+    current_equation, error = _as_equation(current, "current")
+    if error:
+        return _unknown(error)
+
+    try:
+        from engine.parser import X
+    except ImportError:
+        return _unknown("The parser's shared variable X is unavailable.")
+
+    return verify_equations(previous_equation, current_equation, X)
+
+
+def _as_equation(value, name: str):
+    if isinstance(value, sp.Equality):
+        return value, None
+
+    if not isinstance(value, (tuple, list)):
+        return None, f"The {name} step must be a SymPy Equality or a pair of SymPy expressions."
+    if len(value) != 2:
+        return None, f"The {name} equation pair must contain exactly two expressions."
+
+    lhs, rhs = value
+    if not isinstance(lhs, sp.Expr) or not isinstance(rhs, sp.Expr):
+        return None, f"The {name} equation pair must contain SymPy expressions, not raw values."
+
+    try:
+        equation = sp.Eq(lhs, rhs, evaluate=False)
+    except (TypeError, ValueError) as exc:
+        return None, f"The {name} equation pair could not be converted: {exc}"
+    if not isinstance(equation, sp.Equality):
+        return None, f"The {name} equation pair did not produce a SymPy Equality."
+    return equation, None

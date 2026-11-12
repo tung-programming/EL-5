@@ -132,3 +132,24 @@ def _format_solution_set(value):
         return None
     solutions = " or ".join(f"x = {element}" for element in elements)
     return f"has solution {solutions}" if len(elements) == 1 else f"has solutions {solutions}"
+
+
+def explain_step(verification, inference=None, mistake=None):
+    """Adapt a VerificationResult or status dictionary to ``build_explanation``.
+
+    Missing or unsupported verification data safely uses the unknown template.
+    Explanation wording remains centralized in ``build_explanation``.
+    """
+    if isinstance(verification, str):
+        status = verification
+    else:
+        status = _field(verification, "status")
+
+    if not isinstance(status, str) or status.strip().lower() not in {
+        "valid",
+        "invalid",
+        "unknown",
+    }:
+        return build_explanation("unknown")
+
+    return build_explanation(status, verification, inference, mistake)
