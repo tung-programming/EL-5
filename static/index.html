@@ -1,1 +1,49 @@
-<!-- Accessible page. Owner: Member 5. See plan.md §7.8 -->
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Audio-First Algebra Step Checker</title>
+		<link rel="stylesheet" href="/static/style.css" />
+	</head>
+	<body>
+		<header class="topbar">
+			<h1>Audio-First Algebra Step Checker</h1>
+			<p class="tagline">Exact symbolic validation, step-by-step inference, and an accessible expression explorer.</p>
+		</header>
+
+		<main class="layout" aria-label="Algebra checker layout">
+			<section class="panel" aria-labelledby="check-title">
+				<h2 id="check-title">Check a step</h2>
+				<form id="check-step-form" novalidate>
+					<label for="previous-equation">Previous equation</label>
+					<input id="previous-equation" name="previous_equation" type="text" value="3x + 5 = 14" autocomplete="off" />
+
+					<label for="current-equation">Current equation</label>
+					<input id="current-equation" name="current_equation" type="text" value="3x = 9" autocomplete="off" />
+
+					<button type="submit">Check step</button>
+				</form>
+
+				<div id="result-status" class="result-status" role="status" aria-live="polite">Waiting for a step.</div>
+				<pre id="result-json" class="result-json" aria-live="polite"></pre>
+			</section>
+
+			<section class="panel" aria-labelledby="explorer-title">
+				<h2 id="explorer-title">Expression explorer</h2>
+				<form id="explorer-form" novalidate>
+					<label for="expression-input">Expression</label>
+					<input id="expression-input" name="expression" type="text" value="2(x + 3) = 12" autocomplete="off" />
+					<button type="submit">Explore</button>
+				</form>
+
+				<div id="explorer-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+				<div id="explorer" class="explorer" tabindex="0" aria-label="Equation explorer"></div>
+				<div id="explorer-help" class="explorer-help" hidden></div>
+			</section>
+		</main>
+
+		<script src="/static/explorer_keys.js"></script>
+		<script src="/static/app.js"></script>
+	</body>
+</html>
