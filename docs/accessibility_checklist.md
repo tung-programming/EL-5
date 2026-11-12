@@ -16,15 +16,19 @@ Related: `docs/keyboard_guide.md` (what the keys should do), plan.md §6 (journe
 - Three explanation depths on Space / I / C using `spoken_quick`, `spoken_detailed`, `spoken_context`.
 - DOM adapter: `role="tree"` / `treeitem` / `group`, `aria-label` (quick text), `aria-level`, `aria-posinset`, `aria-setsize`, `aria-expanded`, `aria-selected`, roving `tabindex`, an `aria-live="polite"` region, a visible key-help panel, and a `data-selected` hook for a non-colour selection style.
 - One-channel announcement strategy (screen-reader mode vs speech mode) so the screen reader and `speechSynthesis` never both speak the same event.
+- View lifecycle: `destroy()` plus automatic replacement, so rebuilding the explorer on the same container never duplicates the tree, ids, listeners, live region or help panel.
+- Required `onExit` callback (validated), tab order removed on Esc, `open()` reports whether the browser took focus.
+- Speech-mode safeguards: fallback to the live region when `speak` is missing or throws.
+- Role-based names when a node has no quick text, boundary message on the first boundary of a held key, depth limit of 100 levels with a coded error, AltGr printable characters accepted when `getModifierState("AltGraph")` reports it.
 
 ### Automated test results
 
 | Suite | Command | Result |
 |---|---|---|
-| Keyboard logic and DOM adapter (fake DOM) | `node --test tests/js/` | 41 passed, 0 failed |
+| Keyboard logic and DOM adapter (fake DOM) | `node --test tests/js/` | 82 passed, 0 failed (includes regression tests for every review fix) |
 | Explorer + fixture drift guard | `pytest` | 329 passed (the 328 existing explorer tests plus 1 guard that keeps `tests/js/explorer_trees.json` in step with `engine/explore.py`) |
 
-The JS tests run against a hand-written fake DOM, not a browser. They prove the logic and the attributes set. They do not prove how a browser or screen reader behaves.
+The JS tests run against a hand-written fake DOM, not a browser. The fake fires events the way the DOM does (bubbling, no `focusin` when already focused), but it cannot show real focus, scrolling, live-region or `speechSynthesis` behaviour. They prove the logic and the attributes set. They do not prove how a browser or screen reader behaves.
 
 ### Still needs manual verification (needs Member 5's page)
 
@@ -49,6 +53,9 @@ Everything in sections 1 to 8 below, in particular keyboard_guide T1 to T14. The
 - `speechSynthesis` use is injected by the page; the choice between modes is open question Q1 (Member 5).
 - Selection styling and focus outline are CSS work for Member 5; the module only sets `data-selected`.
 - The explorer tree still comes from provisional mock ASTs until Member 1's parser lands.
+- AltGr handling relies on `getModifierState("AltGraph")`. Real Ctrl+Alt combinations on AltGr layouts may also report AltGraph, so shortcut pass-through is not guaranteed there. Not verified across real browsers and keyboard layouts. Letter keys I, C, R match the typed character, so they do not work on layouts that do not produce those letters.
+- Chrome is reported to sometimes drop an utterance spoken straight after `speechSynthesis.cancel()` (speech mode only). Unverified here.
+- In screen-reader mode, opening and leaving the explorer both move focus and write the live region, so a screen reader may speak the focus change and the live text one after the other (or cut one off). Needs checking with NVDA and Orca.
 - A screen reader user who toggles to browse mode (NVDA+Space) will stop receiving the page's keys; this must be stated in the in-page help.
 
 ## How to use

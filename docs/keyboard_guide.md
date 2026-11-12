@@ -84,7 +84,7 @@ Boundary messages are short, are spoken through the live region, and never move 
 | `Home` on the whole equation | Stay | "Already at the whole equation." |
 | `Home` anywhere else | Focus moves to the root. The screen reader speaks the root's accessible name because focus moved; the page adds no second announcement (see Phase 3 clarifications below) | (root name, spoken by focus) |
 | `R` | Reads the whole equation. Focus does **not** move | (root detailed text, see Phase 3 clarifications) |
-| Esc | Tree is hidden or collapsed, focus returns to the Explore button, tree state is discarded | "Left the explorer." |
+| Esc | The keyboard module closes the controller (keys stop working), removes the tree items from the tab order, announces the message and calls `onExit`. The **host page** must, in `onExit`, move focus to the Explore button and hide or collapse the explorer (or call `view.destroy()` to discard its state). The module does not hide or discard the tree itself | "Left the explorer." |
 | Explore pressed with an empty box | Explorer does not open, focus stays on the box | The parser's error message |
 | Explore pressed with unparseable input | Explorer does not open | The parser's spoken error (plan §7.1) |
 | Re-opening the explorer | Focus starts on the whole equation, never on the previous position | Opening announcement (section 5) |
@@ -137,9 +137,12 @@ No key assignment differs from plan §7.6. Two message details were corrected be
 
 Also decided in Phase 3 (documented, no new keys):
 
-- **Auto-repeat.** A held key (`event.repeat`) keeps moving the selection but does not queue boundary, reading or help messages again. The key is still swallowed.
+- **Auto-repeat.** A held key (`event.repeat`) keeps moving the selection silently (focus is the announcement). The **first** boundary reached is announced once; further repeats of the same key at that boundary are silent. Pressing the key again (a new press) announces again, and moving away resets this. Held Space / I / C / R / `?` are silent after the first press. The key is always swallowed.
 - **Esc is final.** After Esc the controller ignores every key until the explorer is opened again, so a second Esc cannot fire twice.
-- **Shift.** Shift and Caps Lock are ignored, so `I` and `i` are the same key. Ctrl, Alt and Meta pass through untouched.
+- **Shift.** Shift and Caps Lock are ignored, so `I` and `i` are the same key.
+- **Modifiers and AltGr.** Ctrl, Alt and Meta combinations pass through, with one exception. AltGr (Windows reports it as Ctrl+Alt) is accepted when `getModifierState("AltGraph")` reports true **and** the key is a single printable character (for example `?` on a layout that needs AltGr for it). Ctrl alone, Meta, and non-printable keys (arrows, Home, Esc) are never accepted this way. **Limitation:** on AltGr keyboard layouts, a real Ctrl+Alt combination may also report AltGraph as true, so pass-through of Ctrl+Alt shortcuts is **not guaranteed** on those layouts: a Ctrl+Alt+I/C/R/`?` could be captured by the explorer. If a browser does not provide `getModifierState`, Ctrl+Alt is rejected. This behaviour has **not been verified** in any real browser or keyboard layout.
+- **Missing text.** A node without a quick text is named from its role ("Left side", "Constant term"), or "Equation part" if it has no role either. Space reads that name. A missing detailed or context text is announced as "There is no detailed explanation for [name]." / "There is no context for [name]." Silence and a generic "no explanation" message are both avoided.
+- **Tree limits.** Trees deeper than 100 levels are rejected (real equations are about 10 deep).
 - **Mouse or Tab focus.** If focus lands on a tree item another way, the selection follows it.
 - **Help panel.** `?` also shows a visible key list (a `role="group"` panel, hidden again on the next handled key), as section 4 requires.
 
@@ -232,21 +235,57 @@ File: `static/explorer_keys.js` (Member 4). `static/app.js`, `index.html` and `s
 
 ```js
 // tree = the ExplorerNode tree from POST /api/parse-expression
-const view = ExplorerKeys.createView(treeContainerEl, tree, {
-  mode: "screen-reader",          // or "speech" (then pass speak / cancelSpeech)
-  liveRegion: exploreLiveEl,      // optional; created if omitted. Separate from the result region
-  onExit() { exploreButton.focus(); },
-  // speak: (t) => speechSynthesis.speak(new SpeechSynthesisUtterance(t)),
-  // cancelSpeech: () => speechSynthesis.cancel(),
-});
-view.open();                       // focus to root + opening announcement
+let explorer = null;
+
+function openExplorer(tree) {
+  try {
+    explorer = ExplorerKeys.createView(treeContainerEl, tree, {
+      onExit() { exploreButton.focus(); },   // REQUIRED. Esc calls this. You choose the target.
+      liveRegion: exploreLiveEl,             // optional, persistent, separate from the result region
+      mode: "screen-reader",                 // or "speech" (then pass speak / cancelSpeech)
+      // speak: (t) => speechSynthesis.speak(new SpeechSynthesisUtterance(t)),
+      // cancelSpeech: () => speechSynthesis.cancel(),
+    });
+  } catch (e) {
+    // e.code: "tree-invalid" | "tree-too-deep" | "options-invalid" | "container-invalid"
+    showSpokenError("The explorer could not be opened.");
+    return;
+  }
+  treeContainerEl.hidden = false;            // container must be visible BEFORE open()
+  const r = explorer.open();                 // focus to root + opening announcement
+  if (!r.focused) { /* browser did not take focus: container hidden or detached */ }
+}
 ```
 
-- `createView` throws on a malformed tree. Catch it and show a spoken error instead of opening the explorer.
-- Needs from Member 5 (CSS): a visible, non-colour-only marker for `[data-selected="true"]` (for example a thick outline plus a symbol), and a visible focus style on `[role="treeitem"]`. The module adds no styles except hiding its own live region.
-- Needs from Member 5 (page): after Explore parses the input successfully, call `open()`. Parser errors must be handled by the page before this module is involved.
-- Explorer keys act only inside the tree container because the listener is on it, which satisfies rule 1 (typing in the text boxes is never affected).
-- `ExplorerKeys.createController(tree)` can be used without the DOM adapter. `handleKey(event)` returns `{handled, preventDefault, action, moved, exit, announce, focusText, focusId, selection}`.
+### View lifecycle
+
+- `createView` owns what it creates: the tree list inside the container, one `keydown` and one `focusin` listener on the container, and (unless you pass them) a live region and a help panel added to the container's parent. Children the container already had are never removed.
+- **Calling `createView` again on the same container destroys the previous view first**, so a second Explore press cannot produce two trees, duplicate ids, two listeners or two controllers. The old view's controller is closed and its `open()` throws (`code: "destroyed"`). If the new tree is invalid, `createView` throws **before** touching anything and the old view keeps working.
+- `view.destroy()` removes the listeners and the tree, removes the live region and help panel it created, restores the container's previous `role` and `aria-label`, and is safe to call twice. A live region or help panel that **you** supplied is kept: its text is cleared and its help list removed. After `destroy()`, no key reaches the controller.
+- `destroy()` does **not** cancel page speech. Cancelling the page's own speech on open and on exit is the page's job.
+- Esc does not destroy the view. It closes the controller, takes every tree item out of the tab order (`tabindex="-1"`) and calls `onExit`. Call `view.open()` to use the same view again (focus starts on the whole equation), or `view.destroy()` to discard it. If focus lands in a closed tree by Tab or click, keys do nothing until `open()`.
+- Until `open()` is called, no tree item is a Tab stop.
+
+### Exit callback (M1)
+
+`onExit` is required. If it is missing or not a function, `createView` throws `options-invalid` ("createView requires an onExit callback that moves focus to the Explore button.") and builds nothing. The module does not guess a focus target: the page must move focus to the Explore button inside `onExit`, otherwise the student would be left in a tree that no longer responds.
+
+### Announcement modes (M3)
+
+- `"screen-reader"` (default): live region only. `speak` is never called.
+- `"speech"`: `speak(text)` only, after `cancelSpeech()` if given. A throwing `cancelSpeech` is ignored. If `speak` throws, that announcement goes to the live region instead (nothing was spoken, so there is no double speech).
+- `"speech"` without a `speak` function does not go silent: the view uses `"screen-reader"` and reports it in `view.mode` and `view.modeFallback`.
+- An unknown `mode`, or a non-function `speak` / `cancelSpeech` / `schedule`, throws `options-invalid`.
+- The module cannot tell whether a screen reader is running. Using `"speech"` while NVDA or Orca is on would double-speak focus changes; the page must choose the mode (open question Q1).
+
+### Other integration requirements
+
+- The container must be attached to the page, and (unless you pass both `liveRegion` and `helpPanel`) must have a parent element, or `createView` throws `container-invalid`.
+- Pass the tree container only. Never pass `body` or a wrapper that also holds the text boxes: the key listener lives on the container, which is what keeps typing safe.
+- CSS needed from Member 5: a visible non-colour-only marker for `[data-selected="true"]`, a visible focus outline on `[role="treeitem"]`, and nothing that overrides the `hidden` attribute on the help panel.
+- Focus uses `focus({preventScroll: true})` followed by `scrollIntoView({block: "nearest"})`, so the page only scrolls when the item is off screen.
+- Parse errors are handled by the page before `createView` is called.
+- `ExplorerKeys.createController(tree)` can be used without the DOM adapter. `handleKey(event)` returns `{handled, preventDefault, action, moved, exit, announce, focusText, focusId, selection}`. `setFocus(id)` returns `{ok: false, handled: false, error: "unknown-node" | "closed"}` on failure.
 
 ### Key to action map
 
@@ -263,4 +302,4 @@ view.open();                       // focus to root + opening announcement
 | ? | `help` | announce key list, show help panel |
 | Escape | `exit` | "Left the explorer.", `onExit()` |
 
-Anything else is unhandled and not prevented. If a node has an empty or missing text field the announcement is "No explanation is available for this part." rather than silence.
+Anything else is unhandled and not prevented. Missing text fields are announced from the role as described under Phase 3 clarifications, never as silence.

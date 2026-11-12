@@ -224,13 +224,26 @@ test("setFocus with unknown, missing or non-string id leaves focus unchanged", (
   assert.equal(c.getFocusId(), "n0.0.1");
 });
 
-test("a node with missing spoken text gets a safe fallback", () => {
+test("missing spoken text falls back to the role, never a generic message", () => {
   const tree = { id: "a", role: "equation", children: [{ id: "b", role: "left_side", spoken_quick: "", children: [] }] };
   const c = EK.createController(tree);
-  assert.equal(c.handleKey(key(" ")).announce, EK.MESSAGES.NO_TEXT);
-  c.handleKey(key("ArrowDown"));
-  assert.equal(c.handleKey(key("i")).announce, EK.MESSAGES.NO_TEXT);
-  assert.equal(c.handleKey(key("ArrowDown")).announce, "left side has nothing inside it.");
+  assert.equal(c.handleKey(key(" ")).announce, "Equation");
+  const down = c.handleKey(key("ArrowDown"));
+  assert.equal(down.focusText, "Left side");
+  assert.equal(c.getSelection().name, "Left side");
+  assert.equal(c.handleKey(key(" ")).announce, "Left side"); // quick falls back to the role name
+  assert.equal(c.handleKey(key("i")).announce, "There is no detailed explanation for Left side.");
+  assert.equal(c.handleKey(key("c")).announce, "There is no context for Left side.");
+  assert.equal(c.handleKey(key("ArrowDown")).announce, "Left side has nothing inside it.");
+  c.setFocus("a");
+  assert.equal(c.handleKey(key("r")).announce, "There is no detailed explanation for Equation.");
+  assert.match(c.openAnnouncement(), /^Equation explorer\. Equation\. Press question mark/);
+});
+
+test("a node with no role and no text still gets a non-empty name", () => {
+  const c = EK.createController({ id: "a", spoken_quick: 5, role: 7 });
+  assert.equal(c.handleKey(key(" ")).announce, EK.MESSAGES.FALLBACK_NAME);
+  assert.equal(c.getSelection().name, EK.MESSAGES.FALLBACK_NAME);
 });
 
 test("a node with no children field is a leaf", () => {
@@ -261,8 +274,7 @@ test("repeated presses: reading keys re-announce, held keys do not queue", () =>
   assert.equal(c.handleKey(key(" ")).announce, c.handleKey(key(" ")).announce);
   const held = c.handleKey(key("?", { repeat: true }));
   assert.equal(held.announce, null); assert.equal(held.preventDefault, true);
-  const bound = c.handleKey(key("ArrowDown", { repeat: true }));
-  assert.equal(bound.announce, null); assert.equal(c.getFocusId(), "n0.0.1");
+  assert.equal(c.getFocusId(), "n0.0.1");
 });
 
 test("holding an arrow keeps moving and stops at the boundary", () => {
@@ -323,12 +335,17 @@ class El {
     this.listeners = {}; this._text = ""; this.hidden = false;
   }
   setAttribute(k, v) { this.attrs[k] = String(v); }
+  removeAttribute(k) { delete this.attrs[k]; }
+  removeChild(c) { this.children = this.children.filter((x) => x !== c); c.parentNode = null; return c; }
+  removeEventListener(t, fn) { this.listeners[t] = (this.listeners[t] || []).filter((f) => f !== fn); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
   appendChild(c) { c.parentNode = this; this.children.push(c); return c; }
   addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); }
   set textContent(v) { this._text = v; }
   get textContent() { return this._text; }
-  focus() {
+  focus(opts) {
+    if (this.doc.activeElement === this) return; // like a browser: no focusin if already focused
+    this.doc.focusOpts.push(opts);
     this.doc.activeElement = this;
     this.doc.focusLog.push(this.attrs["data-node-id"]);
     this.dispatch("focusin", { target: this });
@@ -343,14 +360,14 @@ class El {
   }
 }
 function fakeDoc() {
-  const doc = { activeElement: null, focusLog: [], createElement: (t) => new El(t, doc) };
+  const doc = { activeElement: null, focusLog: [], focusOpts: [], createElement: (t) => new El(t, doc) };
   return doc;
 }
 function mount(tree, opts) {
   const doc = fakeDoc();
   const page = new El("div", doc);
   const tc = page.appendChild(new El("div", doc));
-  const view = EK.createView(tc, tree, Object.assign({ document: doc, schedule: (f) => f() }, opts));
+  const view = EK.createView(tc, tree, Object.assign({ document: doc, schedule: (f) => f(), onExit() {} }, opts));
   const items = [];
   (function walk(el) { if (el.attrs.role === "treeitem") items.push(el); el.children.forEach(walk); })(tc);
   const byId = Object.fromEntries(items.map((e) => [e.attrs["data-node-id"], e]));
@@ -369,6 +386,9 @@ test("view: ARIA tree structure, names, levels, expanded, roving tabindex", () =
   assert.equal(left.attrs["aria-setsize"], "2");
   assert.equal(left.attrs["aria-expanded"], "true");
   assert.equal(m.byId["n0.1"].attrs["aria-expanded"], undefined); // leaf
+  const zero0 = Object.values(m.byId).filter((e) => e.attrs.tabindex === "0");
+  assert.equal(zero0.length, 0); // not a Tab stop until open()
+  m.view.open();
   const zero = Object.values(m.byId).filter((e) => e.attrs.tabindex === "0");
   assert.equal(zero.length, 1); assert.equal(zero[0].attrs["data-node-id"], "n0");
   assert.ok(m.view.liveRegion.attrs["aria-live"] === "polite");
@@ -459,4 +479,432 @@ test("view: screen-reader mode never calls speak", () => {
   const m = mount(T, { speak: () => called++, cancelSpeech: () => called++ });
   m.view.open(); m.press("ArrowDown"); m.press("i");
   assert.equal(called, 0);
+});
+
+// =========================================================================
+// Regression tests for the code-review fixes (C1, M1, M3-M7, M9)
+// =========================================================================
+
+function countTreeitems(el) {
+  let n = 0; (function w(e) { if (e.attrs.role === "treeitem") n++; e.children.forEach(w); })(el); return n;
+}
+function chain(depth) { // root -> n1 -> n2 ... with `depth` levels in total
+  const root = { id: "n0", role: "equation", spoken_quick: "Equation", children: [] };
+  let cur = root;
+  for (let i = 1; i < depth; i++) { const n = { id: "n" + i, role: "operator", spoken_quick: "Level " + (i + 1), children: [] }; cur.children.push(n); cur = n; }
+  return root;
+}
+
+// ---- C1: view lifecycle ---------------------------------------------------
+
+test("C1: createView twice on one container leaves exactly one tree, one listener set", () => {
+  const m = mount(T); m.view.open();
+  const second = EK.createView(m.tc, TREES["2x+3=9"], { document: m.doc, schedule: (f) => f(), onExit() {} });
+  second.open();
+  assert.equal(m.view.isDestroyed(), true);
+  assert.equal(second.isDestroyed(), false);
+  const ids = []; (function w(e) { if (e.attrs.role === "treeitem") ids.push(e.attrs.id); e.children.forEach(w); })(m.tc);
+  assert.equal(ids.length, 7); assert.equal(new Set(ids).size, ids.length);
+  assert.equal(m.tc.listeners.keydown.length, 1);
+  assert.equal(m.tc.listeners.focusin.length, 1);
+  assert.equal(m.page.children.length, 3); // container + ONE live region + ONE help panel
+  assert.equal(m.tc.children.length, 1);
+});
+
+test("C1: one key press moves exactly once after rebuild; stale controller is closed", () => {
+  const m = mount(T); m.view.open();
+  const oldController = m.view.controller;
+  const second = EK.createView(m.tc, TREES["2x+3=9"], { document: m.doc, schedule: (f) => f(), onExit() {} });
+  second.open();
+  m.doc.focusLog.length = 0;
+  m.press("ArrowDown");
+  assert.equal(second.controller.getFocusId(), "n0.0");
+  assert.equal(m.doc.focusLog.length, 1);
+  assert.equal(oldController.isOpen(), false);
+  assert.equal(oldController.handleKey(key("ArrowDown")).handled, false);
+  assert.throws(() => m.view.open(), (e) => e.code === "destroyed");
+});
+
+test("C1: a stale key handler captured before destroy does nothing", () => {
+  const m = mount(T); m.view.open();
+  const stale = m.tc.listeners.keydown[0];
+  m.view.destroy();
+  const ev = { key: "ArrowDown", defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  stale(ev);
+  assert.equal(ev.defaultPrevented, false);
+});
+
+test("C1: destroy removes listeners, tree, live region, help panel; idempotent", () => {
+  const m = mount(T); m.view.open();
+  m.view.destroy(); m.view.destroy();
+  assert.equal(m.tc.listeners.keydown.length, 0);
+  assert.equal(m.tc.listeners.focusin.length, 0);
+  assert.equal(countTreeitems(m.tc), 0);
+  assert.equal(m.page.children.length, 1); // only the container remains
+  assert.equal(m.press("ArrowDown").defaultPrevented, false);
+  assert.equal(m.view.controller.isOpen(), false);
+});
+
+test("C1: destroy preserves pre-existing children and restores role / aria-label", () => {
+  const doc = fakeDoc(); const page = new El("div", doc); const tc = page.appendChild(new El("div", doc));
+  const mine = tc.appendChild(new El("p", doc));
+  tc.setAttribute("aria-label", "Original label");
+  const v = EK.createView(tc, T, { document: doc, schedule: (f) => f(), onExit() {} });
+  assert.equal(tc.attrs["aria-label"], "Equation explorer");
+  assert.equal(tc.attrs.role, "tree");
+  v.destroy();
+  assert.deepEqual(tc.children, [mine]);
+  assert.equal(tc.attrs["aria-label"], "Original label");
+  assert.equal("role" in tc.attrs, false);
+});
+
+test("C1: pending live-region write after destroy is dropped", () => {
+  const pending = []; const m = mount(T, { schedule: (f) => pending.push(f) });
+  m.view.open();
+  const live = m.view.liveRegion;
+  m.view.destroy();
+  pending.forEach((f) => f());
+  assert.equal(live.textContent, "");
+});
+
+test("C1: caller-supplied live region and help panel are kept, cleaned and reusable", () => {
+  const doc = fakeDoc(); const page = new El("div", doc); const tc = page.appendChild(new El("div", doc));
+  const live = page.appendChild(new El("div", doc)); const help = page.appendChild(new El("div", doc));
+  help.hidden = true;
+  const o = { document: doc, schedule: (f) => f(), onExit() {}, liveRegion: live, helpPanel: help };
+  const v = EK.createView(tc, T, o); v.open();
+  assert.equal(live.textContent.startsWith("Equation explorer."), true);
+  assert.equal(help.children.length, 1);
+  v.destroy();
+  assert.equal(live.parentNode, page); assert.equal(help.parentNode, page);
+  assert.equal(live.textContent, ""); assert.equal(help.children.length, 0); assert.equal(help.hidden, true);
+  const v2 = EK.createView(tc, T, o); v2.open(); v2.destroy();
+  assert.equal(page.children.length, 3);
+});
+
+test("C1: a bad new tree throws and leaves the previous view working", () => {
+  const m = mount(T); m.view.open();
+  assert.throws(() => EK.createView(m.tc, { id: "" }, { document: m.doc, onExit() {} }), (e) => e.code === "tree-invalid");
+  assert.equal(m.view.isDestroyed(), false);
+  m.press("ArrowDown");
+  assert.equal(m.doc.activeElement, m.byId["n0.0"]);
+});
+
+test("C1: 50 create/destroy cycles do not leak elements or listeners", () => {
+  const m = mount(T);
+  for (let i = 0; i < 50; i++) { const v = EK.createView(m.tc, T, { document: m.doc, schedule: (f) => f(), onExit() {} }); v.open(); }
+  assert.equal(countTreeitems(m.tc), 7);
+  assert.equal(m.tc.listeners.keydown.length, 1);
+  assert.equal(m.page.children.length, 3);
+});
+
+// ---- M1: onExit required ---------------------------------------------------
+
+test("M1: createView without a usable onExit throws a clear error", () => {
+  const doc = fakeDoc(); const page = new El("div", doc); const tc = page.appendChild(new El("div", doc));
+  for (const bad of [undefined, null, "x", 5, {}]) {
+    assert.throws(() => EK.createView(tc, T, { document: doc, onExit: bad }),
+      (e) => e.code === "options-invalid" && /onExit/.test(e.message) && /Explore button/.test(e.message));
+  }
+  assert.throws(() => EK.createView(tc, T, { document: doc }), (e) => e.code === "options-invalid");
+  assert.throws(() => EK.createView(tc, T), (e) => e.code === "options-invalid");
+  assert.equal(tc.children.length, 0); assert.equal(page.children.length, 1); // nothing was built
+});
+
+test("M1: Esc calls onExit once, takes the tree out of the tab order, open() restores it", () => {
+  let exits = 0; const m = mount(T, { onExit: () => exits++ }); m.view.open();
+  m.press("ArrowDown");
+  m.press("Escape"); m.press("Escape");
+  assert.equal(exits, 1);
+  assert.equal(Object.values(m.byId).filter((e) => e.attrs.tabindex === "0").length, 0);
+  m.byId["n0.0"].focus(); // Tab / click back in while closed: keys stay dead, state not corrupted
+  assert.equal(m.press("ArrowDown").defaultPrevented, false);
+  m.view.open();
+  assert.equal(m.view.controller.getFocusId(), "n0");
+  assert.equal(m.byId["n0"].attrs.tabindex, "0");
+  assert.equal(m.press("ArrowDown").defaultPrevented, true);
+});
+
+// ---- M3: speech mode -------------------------------------------------------
+
+test("M3: speech mode without speak falls back to the live region and says so", () => {
+  const m = mount(T, { mode: "speech" });
+  assert.equal(m.view.mode, "screen-reader");
+  assert.match(m.view.modeFallback, /speak/);
+  m.view.open(); m.press("i");
+  assert.equal(m.view.liveRegion.textContent, find(T, "n0").spoken_detailed);
+});
+
+test("M3: normal modes report no fallback", () => {
+  assert.equal(mount(T).view.modeFallback, null);
+  const s = mount(T, { mode: "speech", speak() {} });
+  assert.equal(s.view.mode, "speech"); assert.equal(s.view.modeFallback, null);
+});
+
+test("M3: invalid mode / non-function callbacks are rejected", () => {
+  const doc = fakeDoc(); const page = new El("div", doc); const tc = page.appendChild(new El("div", doc));
+  const base = { document: doc, onExit() {} };
+  assert.throws(() => EK.createView(tc, T, Object.assign({}, base, { mode: "loud" })), (e) => e.code === "options-invalid");
+  for (const name of ["speak", "cancelSpeech", "schedule"]) {
+    assert.throws(() => EK.createView(tc, T, Object.assign({}, base, { [name]: "no" })), (e) => e.code === "options-invalid", name);
+  }
+});
+
+test("M3: speak failing falls back to the live region for that announcement only", () => {
+  let calls = 0;
+  const m = mount(T, { mode: "speech", speak: () => { calls++; throw new Error("tts down"); } });
+  m.view.open();
+  assert.equal(calls, 1);
+  assert.match(m.view.liveRegion.textContent, /^Equation explorer\./);
+});
+
+test("M3: a throwing cancelSpeech does not stop speech; cancel is optional", () => {
+  const spoken = [];
+  const m = mount(T, { mode: "speech", speak: (t) => spoken.push(t), cancelSpeech: () => { throw new Error("x"); } });
+  m.view.open(); assert.equal(spoken.length, 1);
+  const n = mount(T, { mode: "speech", speak: (t) => spoken.push(t) });
+  n.view.open(); assert.equal(spoken.length, 2);
+});
+
+test("M3: each action uses exactly one channel", () => {
+  for (const mode of ["screen-reader", "speech"]) {
+    const spoken = []; let liveWrites = 0;
+    const m = mount(T, { mode, speak: (t) => spoken.push(t) });
+    const live = m.view.liveRegion;
+    let value = ""; Object.defineProperty(live, "textContent", { get: () => value, set: (v) => { if (v !== "") liveWrites++; value = v; } });
+    m.view.open();
+    for (const k of ["ArrowDown", " ", "i", "c", "r", "?", "ArrowUp", "Home"]) {
+      const s0 = spoken.length, l0 = liveWrites;
+      m.press(k);
+      const used = (spoken.length - s0) + (liveWrites - l0);
+      assert.ok(used <= 1, mode + " " + k + " used " + used + " channels/utterances");
+    }
+    if (mode === "screen-reader") assert.equal(spoken.length, 0); else assert.equal(liveWrites, 0);
+  }
+});
+
+// ---- M4: role-based names ---------------------------------------------------
+
+test("M4: view labels fall back to the role, not a generic sentence", () => {
+  const tree = { id: "a", role: "equation", children: [{ id: "b", role: "constant_term", children: [] }, { id: "c", children: [] }] };
+  const m = mount(tree);
+  assert.equal(m.byId.a.attrs["aria-label"], "Equation");
+  assert.equal(m.byId.b.attrs["aria-label"], "Constant term");
+  assert.equal(m.byId.c.attrs["aria-label"], EK.MESSAGES.FALLBACK_NAME);
+  assert.equal(m.byId.b.children[0].textContent, "Constant term");
+  for (const el of Object.values(m.byId)) assert.doesNotMatch(el.attrs["aria-label"], /No explanation/i);
+});
+
+// ---- M5: held-key boundaries -------------------------------------------------
+
+test("M5: holding a key announces the first boundary once, not every repeat", () => {
+  const c = at("n0");
+  const out = [];
+  for (let i = 0; i < 12; i++) out.push(c.handleKey(key("ArrowDown", { repeat: i > 0 })));
+  const moved = out.filter((r) => r.moved).length;
+  const said = out.filter((r) => r.announce);
+  assert.equal(moved, 3); // n0 -> n0.0 -> n0.0.0 -> n0.0.0.0
+  assert.equal(said.length, 1);
+  assert.match(said[0].announce, /has nothing inside it\.$/);
+  assert.equal(out.slice(0, 3).every((r) => r.announce === null), true); // movement is silent
+});
+
+test("M5: a fresh press at the boundary announces again; moving away resets", () => {
+  const c = at("n0.0.0.1");
+  assert.ok(c.handleKey(key("ArrowRight")).announce);                     // press 1
+  assert.equal(c.handleKey(key("ArrowRight", { repeat: true })).announce, null);
+  assert.equal(c.handleKey(key("ArrowRight", { repeat: true })).announce, null);
+  assert.ok(c.handleKey(key("ArrowRight")).announce);                     // new press
+  c.handleKey(key("ArrowLeft"));                                          // moved: resets
+  assert.ok(c.handleKey(key("ArrowRight", { repeat: true })).moved);
+  assert.ok(c.handleKey(key("ArrowRight", { repeat: true })).announce);   // boundary again after moving
+});
+
+test("M5: first boundary during a hold is announced even if the hold began elsewhere", () => {
+  const c = at("n0.0.0.0");
+  assert.equal(c.handleKey(key("ArrowRight")).moved, true);               // press moves
+  const r = c.handleKey(key("ArrowRight", { repeat: true }));             // hits the end
+  assert.equal(r.moved, false); assert.equal(r.announce, "This is the last part at this level.");
+  assert.equal(c.handleKey(key("ArrowRight", { repeat: true })).announce, null);
+});
+
+test("M5: switching to a different boundary key mid-hold announces it once", () => {
+  const c = at("n0");
+  assert.ok(c.handleKey(key("ArrowUp")).announce);
+  assert.equal(c.handleKey(key("ArrowUp", { repeat: true })).announce, null);
+  assert.ok(c.handleKey(key("Home", { repeat: true })).announce);         // different action
+  assert.equal(c.handleKey(key("Home", { repeat: true })).announce, null);
+});
+
+test("M5: reading keys stay silent on auto-repeat, still prevented", () => {
+  const c = at("n0.0");
+  for (const k of [" ", "i", "c", "r", "?"]) {
+    const r = c.handleKey(key(k, { repeat: true }));
+    assert.equal(r.announce, null, k); assert.equal(r.preventDefault, true, k);
+  }
+});
+
+// ---- M7: depth / malformed ---------------------------------------------------
+
+test("M7: MAX_DEPTH levels are accepted, one more is a tree-too-deep error", () => {
+  assert.equal(EK.MAX_DEPTH, 100);
+  assert.doesNotThrow(() => EK.createController(chain(EK.MAX_DEPTH)));
+  assert.throws(() => EK.createController(chain(EK.MAX_DEPTH + 1)),
+    (e) => e.code === "tree-too-deep" && /too deep/.test(e.message));
+});
+
+test("M7: a 50000-level tree fails predictably, not with RangeError", () => {
+  assert.throws(() => EK.createController(chain(50000)), (e) => e.code === "tree-too-deep" && !(e instanceof RangeError));
+});
+
+test("M7: too-deep or invalid trees do not touch the container", () => {
+  const doc = fakeDoc(); const page = new El("div", doc); const tc = page.appendChild(new El("div", doc));
+  for (const bad of [chain(500), { id: "a", children: null }, null]) {
+    assert.throws(() => EK.createView(tc, bad, { document: doc, onExit() {} }), (e) => /tree/.test(e.code));
+  }
+  assert.equal(tc.children.length, 0); assert.deepEqual(tc.attrs, {}); assert.equal(page.children.length, 1);
+});
+
+test("M7: all tree errors carry a code", () => {
+  for (const bad of [null, { id: "" }, { id: "a", children: "x" }, { id: "a", children: [{ id: "a" }] }, { id: "a", children: [[]] }]) {
+    assert.throws(() => EK.createController(bad), (e) => e.code === "tree-invalid");
+  }
+});
+
+test("M7: a 100-level tree can be navigated down and back up", () => {
+  const c = EK.createController(chain(EK.MAX_DEPTH));
+  for (let i = 0; i < EK.MAX_DEPTH - 1; i++) assert.equal(c.handleKey(key("ArrowDown")).moved, true);
+  assert.equal(c.getSelection().level, 100);
+  assert.equal(c.handleKey(key("ArrowDown")).moved, false);
+  c.handleKey(key("Home")); assert.equal(c.getFocusId(), "n0");
+});
+
+// ---- M6: AltGr ----------------------------------------------------------------
+
+const altGr = (k, extra) => key(k, Object.assign({ ctrlKey: true, altKey: true, getModifierState: (n) => n === "AltGraph" }, extra || {}));
+
+test("M6: AltGr (reported as Ctrl+Alt) with a printable character is accepted", () => {
+  const c = at("n0.0");
+  assert.equal(c.handleKey(altGr("?")).action, "help");
+  assert.equal(c.handleKey(altGr("r")).action, "readAll");
+  assert.equal(c.handleKey(altGr("c", { ctrlKey: false })).action, "context"); // Linux style: alt only
+  assert.equal(c.handleKey(altGr("c", { ctrlKey: false, altKey: false })).action, "context");
+});
+
+test("M6: real Ctrl / Alt / Meta combinations still pass through", () => {
+  const c = at("n0.0");
+  const noAltGr = { getModifierState: () => false };
+  for (const mods of [{ ctrlKey: true }, { altKey: true }, { ctrlKey: true, altKey: true }, { metaKey: true }]) {
+    for (const k of ["r", "i", "c", "?", "ArrowDown", "Home", " ", "Escape"]) {
+      assert.equal(c.handleKey(key(k, Object.assign({}, mods, noAltGr))).handled, false, JSON.stringify(mods) + k);
+    }
+  }
+  // no getModifierState at all: cannot tell AltGr from Ctrl+Alt, so it is rejected
+  assert.equal(c.handleKey(key("?", { ctrlKey: true, altKey: true })).handled, false);
+});
+
+test("M6: AltGr never lets through Ctrl alone, Meta, or non-printable keys", () => {
+  const c = at("n0.0");
+  const gm = { getModifierState: () => true };
+  assert.equal(c.handleKey(key("r", Object.assign({ ctrlKey: true }, gm))).handled, false);   // Ctrl without Alt
+  assert.equal(c.handleKey(key("r", Object.assign({ metaKey: true, altKey: true }, gm))).handled, false);
+  assert.equal(c.handleKey(altGr("ArrowDown")).handled, false);
+  assert.equal(c.handleKey(altGr("Home")).handled, false);
+  assert.equal(c.handleKey(altGr("Escape")).handled, false);
+});
+
+test("M6: a throwing getModifierState is treated as not-AltGr", () => {
+  const c = at("n0.0");
+  assert.equal(c.handleKey(key("?", { ctrlKey: true, altKey: true, getModifierState() { throw new Error("x"); } })).handled, false);
+});
+
+// ---- M9: smaller items ------------------------------------------------------------
+
+test("M9: setFocus with an invalid id is not 'handled'", () => {
+  const c = at("n0.0");
+  for (const id of ["nope", "", undefined, null, 5]) {
+    const r = c.setFocus(id);
+    assert.equal(r.ok, false); assert.equal(r.handled, false); assert.equal(r.preventDefault, false);
+    assert.equal(r.error, "unknown-node"); assert.equal(r.moved, false); assert.equal(r.focusId, "n0.0");
+  }
+  assert.equal(c.setFocus("n0.1").handled, true);
+});
+
+test("M9: setFocus on a closed controller fails with 'closed'", () => {
+  const c = at("n0.0"); c.handleKey(key("Escape"));
+  const r = c.setFocus("n0.1");
+  assert.equal(r.ok, false); assert.equal(r.error, "closed"); assert.equal(c.getFocusId(), "n0.0");
+});
+
+test("M9: reset() reports movement accurately", () => {
+  const c = at("n0.0.1");
+  assert.equal(c.reset().moved, true);
+  assert.equal(c.reset().moved, false);
+  assert.equal(c.getFocusId(), "n0");
+});
+
+test("M9: container without a parent is rejected unless live region and help panel are supplied", () => {
+  const doc = fakeDoc(); const orphan = new El("div", doc);
+  assert.throws(() => EK.createView(orphan, T, { document: doc, onExit() {} }), (e) => e.code === "container-invalid");
+  const live = new El("div", doc); const help = new El("div", doc);
+  const v = EK.createView(orphan, T, { document: doc, onExit() {}, liveRegion: live, helpPanel: help, schedule: (f) => f() });
+  v.open(); assert.match(live.textContent, /^Equation explorer\./);
+  for (const bad of [null, undefined, {}, "div", 5]) {
+    assert.throws(() => EK.createView(bad, T, { document: doc, onExit() {} }), (e) => e.code === "container-invalid");
+  }
+});
+
+test("M9: focus avoids needless scrolling", () => {
+  const m = mount(T); const scrolls = [];
+  for (const el of Object.values(m.byId)) el.scrollIntoView = (o) => scrolls.push(o);
+  m.view.open(); m.press("ArrowDown");
+  assert.ok(m.doc.focusOpts.length >= 2);
+  assert.ok(m.doc.focusOpts.every((o) => o && o.preventScroll === true));
+  assert.ok(scrolls.length >= 2 && scrolls.every((o) => o.block === "nearest"));
+});
+
+test("M9: open() reports focused=false when the browser did not take focus", () => {
+  const m = mount(T);
+  m.byId["n0"].focus = () => {}; // e.g. container is display:none
+  assert.equal(m.view.open().focused, false);
+  const ok = mount(T);
+  assert.equal(ok.view.open().focused, true);
+});
+
+// ---- ARIA consistency across every real tree ------------------------------------------
+
+test("ARIA: levels, positions, sizes, expanded, ids and tab stop are consistent for every fixture", () => {
+  for (const [name, tree] of Object.entries(TREES)) {
+    const m = mount(tree); m.view.open();
+    const seenIds = new Set();
+    (function walk(node, level, pos, size) {
+      const el = m.byId[node.id];
+      assert.ok(el, name + node.id);
+      assert.equal(el.attrs["aria-level"], String(level), name + node.id);
+      assert.equal(el.attrs["aria-posinset"], String(pos), name + node.id);
+      assert.equal(el.attrs["aria-setsize"], String(size), name + node.id);
+      assert.equal(el.attrs["aria-expanded"], node.children.length ? "true" : undefined, name + node.id);
+      assert.equal(el.attrs["aria-label"], node.spoken_quick, name + node.id);
+      assert.equal(seenIds.has(el.attrs.id), false); seenIds.add(el.attrs.id);
+      const group = el.children.find((c) => c.attrs.role === "group");
+      assert.equal(!!group, node.children.length > 0);
+      if (group) assert.equal(group.children.length, node.children.length);
+      node.children.forEach((k, i) => walk(k, level + 1, i + 1, node.children.length));
+    })(tree, 1, 1, 1);
+    assert.equal(Object.values(m.byId).filter((e) => e.attrs.tabindex === "0").length, 1, name);
+    assert.equal(Object.values(m.byId).filter((e) => e.attrs["aria-selected"] === "true").length, 1, name);
+  }
+});
+
+test("ARIA: selection and tab stop stay synchronised through a long key sequence", () => {
+  const m = mount(TREES["2(x+3)=12"]); m.view.open();
+  const keys = ["ArrowDown", "ArrowDown", "ArrowRight", "ArrowDown", "ArrowDown", "ArrowRight", "ArrowUp", "i", "Home", "ArrowRight", "ArrowLeft", "?", "ArrowDown"];
+  for (const k of keys) {
+    m.press(k);
+    const id = m.view.controller.getFocusId();
+    assert.equal(m.byId[id].attrs.tabindex, "0", k);
+    assert.equal(m.byId[id].attrs["aria-selected"], "true", k);
+    assert.equal(m.doc.activeElement, m.byId[id], k);
+    assert.equal(Object.values(m.byId).filter((e) => e.attrs.tabindex === "0").length, 1, k);
+  }
 });
