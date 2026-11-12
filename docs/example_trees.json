@@ -1,0 +1,574 @@
+{
+  "_about": "Example OwnAST trees produced by engine/parser.py (Member 1), for Members 3 and 4 to build against. Regenerate with: python -m engine.examples. Format: docs/contracts.md.",
+  "examples": [
+    {
+      "input": "3x + 5 = 14",
+      "bracketed": "((3 · x) + 5) = 14",
+      "spoken": "three x plus five equals fourteen",
+      "sympy": "3*x + 5 = 14",
+      "tree": {
+        "type": "Equation",
+        "value": null,
+        "children": [
+          {
+            "type": "Add",
+            "value": null,
+            "children": [
+              {
+                "type": "Mul",
+                "value": null,
+                "children": [
+                  {
+                    "type": "Number",
+                    "value": "3",
+                    "children": [],
+                    "span": [
+                      0,
+                      1
+                    ],
+                    "implicit": false,
+                    "typed": null
+                  },
+                  {
+                    "type": "Variable",
+                    "value": "x",
+                    "children": [],
+                    "span": [
+                      1,
+                      2
+                    ],
+                    "implicit": false,
+                    "typed": null
+                  }
+                ],
+                "span": [
+                  0,
+                  2
+                ],
+                "implicit": true,
+                "typed": null
+              },
+              {
+                "type": "Number",
+                "value": "5",
+                "children": [],
+                "span": [
+                  5,
+                  6
+                ],
+                "implicit": false,
+                "typed": null
+              }
+            ],
+            "span": [
+              0,
+              6
+            ],
+            "implicit": false,
+            "typed": null
+          },
+          {
+            "type": "Number",
+            "value": "14",
+            "children": [],
+            "span": [
+              9,
+              11
+            ],
+            "implicit": false,
+            "typed": null
+          }
+        ],
+        "span": [
+          0,
+          11
+        ],
+        "implicit": false,
+        "typed": null
+      }
+    },
+    {
+      "input": "3x = 9",
+      "bracketed": "(3 · x) = 9",
+      "spoken": "three x equals nine",
+      "sympy": "3*x = 9",
+      "tree": {
+        "type": "Equation",
+        "value": null,
+        "children": [
+          {
+            "type": "Mul",
+            "value": null,
+            "children": [
+              {
+                "type": "Number",
+                "value": "3",
+                "children": [],
+                "span": [
+                  0,
+                  1
+                ],
+                "implicit": false,
+                "typed": null
+              },
+              {
+                "type": "Variable",
+                "value": "x",
+                "children": [],
+                "span": [
+                  1,
+                  2
+                ],
+                "implicit": false,
+                "typed": null
+              }
+            ],
+            "span": [
+              0,
+              2
+            ],
+            "implicit": true,
+            "typed": null
+          },
+          {
+            "type": "Number",
+            "value": "9",
+            "children": [],
+            "span": [
+              5,
+              6
+            ],
+            "implicit": false,
+            "typed": null
+          }
+        ],
+        "span": [
+          0,
+          6
+        ],
+        "implicit": false,
+        "typed": null
+      }
+    },
+    {
+      "input": "2(x + 3) = 10",
+      "bracketed": "(2 · [(x + 3)]) = 10",
+      "spoken": "two times open bracket x plus three close bracket equals ten",
+      "sympy": "2*x + 6 = 10",
+      "tree": {
+        "type": "Equation",
+        "value": null,
+        "children": [
+          {
+            "type": "Mul",
+            "value": null,
+            "children": [
+              {
+                "type": "Number",
+                "value": "2",
+                "children": [],
+                "span": [
+                  0,
+                  1
+                ],
+                "implicit": false,
+                "typed": null
+              },
+              {
+                "type": "Group",
+                "value": null,
+                "children": [
+                  {
+                    "type": "Add",
+                    "value": null,
+                    "children": [
+                      {
+                        "type": "Variable",
+                        "value": "x",
+                        "children": [],
+                        "span": [
+                          2,
+                          3
+                        ],
+                        "implicit": false,
+                        "typed": null
+                      },
+                      {
+                        "type": "Number",
+                        "value": "3",
+                        "children": [],
+                        "span": [
+                          6,
+                          7
+                        ],
+                        "implicit": false,
+                        "typed": null
+                      }
+                    ],
+                    "span": [
+                      2,
+                      7
+                    ],
+                    "implicit": false,
+                    "typed": null
+                  }
+                ],
+                "span": [
+                  1,
+                  8
+                ],
+                "implicit": false,
+                "typed": null
+              }
+            ],
+            "span": [
+              0,
+              8
+            ],
+            "implicit": true,
+            "typed": null
+          },
+          {
+            "type": "Number",
+            "value": "10",
+            "children": [],
+            "span": [
+              11,
+              13
+            ],
+            "implicit": false,
+            "typed": null
+          }
+        ],
+        "span": [
+          0,
+          13
+        ],
+        "implicit": false,
+        "typed": null
+      }
+    },
+    {
+      "input": "x/2 = 3",
+      "bracketed": "(x / 2) = 3",
+      "spoken": "x over two equals three",
+      "sympy": "x/2 = 3",
+      "tree": {
+        "type": "Equation",
+        "value": null,
+        "children": [
+          {
+            "type": "Div",
+            "value": null,
+            "children": [
+              {
+                "type": "Variable",
+                "value": "x",
+                "children": [],
+                "span": [
+                  0,
+                  1
+                ],
+                "implicit": false,
+                "typed": null
+              },
+              {
+                "type": "Number",
+                "value": "2",
+                "children": [],
+                "span": [
+                  2,
+                  3
+                ],
+                "implicit": false,
+                "typed": null
+              }
+            ],
+            "span": [
+              0,
+              3
+            ],
+            "implicit": false,
+            "typed": null
+          },
+          {
+            "type": "Number",
+            "value": "3",
+            "children": [],
+            "span": [
+              6,
+              7
+            ],
+            "implicit": false,
+            "typed": null
+          }
+        ],
+        "span": [
+          0,
+          7
+        ],
+        "implicit": false,
+        "typed": null
+      }
+    },
+    {
+      "input": "-3x + 5 = -4",
+      "bracketed": "(((-3) · x) + 5) = (-4)",
+      "spoken": "negative three x plus five equals negative four",
+      "sympy": "5 - 3*x = -4",
+      "tree": {
+        "type": "Equation",
+        "value": null,
+        "children": [
+          {
+            "type": "Add",
+            "value": null,
+            "children": [
+              {
+                "type": "Mul",
+                "value": null,
+                "children": [
+                  {
+                    "type": "Neg",
+                    "value": null,
+                    "children": [
+                      {
+                        "type": "Number",
+                        "value": "3",
+                        "children": [],
+                        "span": [
+                          1,
+                          2
+                        ],
+                        "implicit": false,
+                        "typed": null
+                      }
+                    ],
+                    "span": [
+                      0,
+                      2
+                    ],
+                    "implicit": false,
+                    "typed": null
+                  },
+                  {
+                    "type": "Variable",
+                    "value": "x",
+                    "children": [],
+                    "span": [
+                      2,
+                      3
+                    ],
+                    "implicit": false,
+                    "typed": null
+                  }
+                ],
+                "span": [
+                  0,
+                  3
+                ],
+                "implicit": true,
+                "typed": null
+              },
+              {
+                "type": "Number",
+                "value": "5",
+                "children": [],
+                "span": [
+                  6,
+                  7
+                ],
+                "implicit": false,
+                "typed": null
+              }
+            ],
+            "span": [
+              0,
+              7
+            ],
+            "implicit": false,
+            "typed": null
+          },
+          {
+            "type": "Neg",
+            "value": null,
+            "children": [
+              {
+                "type": "Number",
+                "value": "4",
+                "children": [],
+                "span": [
+                  11,
+                  12
+                ],
+                "implicit": false,
+                "typed": null
+              }
+            ],
+            "span": [
+              10,
+              12
+            ],
+            "implicit": false,
+            "typed": null
+          }
+        ],
+        "span": [
+          0,
+          12
+        ],
+        "implicit": false,
+        "typed": null
+      }
+    },
+    {
+      "input": "x^2 - 4 = 0",
+      "bracketed": "((x ^ 2) - 4) = 0",
+      "spoken": "x squared minus four equals zero",
+      "sympy": "x**2 - 4 = 0",
+      "tree": {
+        "type": "Equation",
+        "value": null,
+        "children": [
+          {
+            "type": "Sub",
+            "value": null,
+            "children": [
+              {
+                "type": "Pow",
+                "value": null,
+                "children": [
+                  {
+                    "type": "Variable",
+                    "value": "x",
+                    "children": [],
+                    "span": [
+                      0,
+                      1
+                    ],
+                    "implicit": false,
+                    "typed": null
+                  },
+                  {
+                    "type": "Number",
+                    "value": "2",
+                    "children": [],
+                    "span": [
+                      2,
+                      3
+                    ],
+                    "implicit": false,
+                    "typed": null
+                  }
+                ],
+                "span": [
+                  0,
+                  3
+                ],
+                "implicit": false,
+                "typed": null
+              },
+              {
+                "type": "Number",
+                "value": "4",
+                "children": [],
+                "span": [
+                  6,
+                  7
+                ],
+                "implicit": false,
+                "typed": null
+              }
+            ],
+            "span": [
+              0,
+              7
+            ],
+            "implicit": false,
+            "typed": null
+          },
+          {
+            "type": "Number",
+            "value": "0",
+            "children": [],
+            "span": [
+              10,
+              11
+            ],
+            "implicit": false,
+            "typed": null
+          }
+        ],
+        "span": [
+          0,
+          11
+        ],
+        "implicit": false,
+        "typed": null
+      }
+    },
+    {
+      "input": "2.5x = 5",
+      "bracketed": "(2.5 · x) = 5",
+      "spoken": "two point five x equals five",
+      "sympy": "5*x/2 = 5",
+      "tree": {
+        "type": "Equation",
+        "value": null,
+        "children": [
+          {
+            "type": "Mul",
+            "value": null,
+            "children": [
+              {
+                "type": "Number",
+                "value": "2.5",
+                "children": [],
+                "span": [
+                  0,
+                  3
+                ],
+                "implicit": false,
+                "typed": null
+              },
+              {
+                "type": "Variable",
+                "value": "x",
+                "children": [],
+                "span": [
+                  3,
+                  4
+                ],
+                "implicit": false,
+                "typed": null
+              }
+            ],
+            "span": [
+              0,
+              4
+            ],
+            "implicit": true,
+            "typed": null
+          },
+          {
+            "type": "Number",
+            "value": "5",
+            "children": [],
+            "span": [
+              7,
+              8
+            ],
+            "implicit": false,
+            "typed": null
+          }
+        ],
+        "span": [
+          0,
+          8
+        ],
+        "implicit": false,
+        "typed": null
+      }
+    }
+  ]
+}
