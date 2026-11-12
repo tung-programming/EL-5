@@ -10,11 +10,20 @@ land.
 """
 
 import copy
+import math
+import random
+import re
+from pathlib import Path
 
 import pytest
 
-from engine.explore import ExplorerError, build_explorer_tree
-from tests.explorer_fixtures import FIXTURE_NODE_TYPES, FIXTURES
+from engine.explore import MAX_DEPTH, ExplorerError, build_explorer_tree
+from tests.explorer_fixtures import (
+    ALL_FIXTURES,
+    FIXTURE_NODE_TYPES,
+    FIXTURES,
+    REVIEW_FIXTURES,
+)
 
 
 def walk(node):
@@ -732,10 +741,10 @@ def test_negative_number_values_are_spoken_as_negative():
     coef = by_role(root, "coefficient")[0]
     const = by_role(root, "constant_term")[0]
     assert coef["spoken_quick"] == "Coefficient negative 3"
-    assert "negative 3 is the coefficient of x" in coef["spoken_detailed"]
+    assert "Negative 3 is the coefficient of x" in coef["spoken_detailed"]
     assert "multiplied by negative 3" in coef["spoken_detailed"]
     assert "negative 3x" in coef["spoken_context"]
-    assert "negative 5 is a constant term" in const["spoken_detailed"]
+    assert "Negative 5 is a constant term" in const["spoken_detailed"]
     assert "just the number negative 1" in root["children"][1]["spoken_detailed"]
     assert "-" not in " ".join(spoken(n) for n in flat(root))
 
@@ -1100,7 +1109,7 @@ def test_multiplier_after_the_group():
     assert two["role"] == "group_multiplier"
     assert group["role"] == "group"
     assert "So 2 multiplies the entire group x plus 3." in root["children"][0]["spoken_detailed"]
-    assert "the group x plus 3, times 2" in root["children"][0]["spoken_detailed"]
+    assert "the group x plus 3 end group times 2" in root["children"][0]["spoken_detailed"]
 
 
 def test_multiplier_is_not_a_coefficient_and_a_coefficient_is_not_a_multiplier():
@@ -1154,7 +1163,7 @@ def test_negative_multiplier():
     mult = root["children"][0]["children"][0]
     assert mult["role"] == "group_multiplier"
     assert mult["spoken_quick"] == "Multiplier negative 2"
-    assert mult["spoken_detailed"].startswith("negative 2 is the multiplier of the group x plus 3.")
+    assert mult["spoken_detailed"].startswith("Negative 2 is the multiplier of the group x plus 3.")
     assert "multiplied by negative 2" in mult["spoken_detailed"]
     assert "-" not in spoken(mult)
 
@@ -1303,7 +1312,7 @@ def test_group_as_base_of_a_power():
     assert (pow_node["role"], pow_node["type"]) == ("left_side", "Pow")
     assert (group["role"], two["role"]) == ("group", "exponent")
     assert "The base is the group x plus 1 and the exponent is 2" in pow_node["spoken_detailed"]
-    assert "the group x plus 1 squared means the group x plus 1 is multiplied by itself" in (
+    assert "The group x plus 1 squared means the group x plus 1 is multiplied by itself" in (
         pow_node["spoken_detailed"]
     )
     assert "It is the base, raised to the power 2." in group["spoken_detailed"]
@@ -1312,9 +1321,9 @@ def test_group_as_base_of_a_power():
 
 
 def test_group_base_is_separate_from_exponent_in_speech():
-    # the comma stops "squared"/"to the power of" attaching to the wrong thing
+    # the spoken "end group" stops "to the power of" attaching to the wrong thing
     pow_node = tree("(x+1)^2=9")["children"][0]
-    assert "the group x plus 1, to the power of 2" in tree("(x+1)^2=9")["spoken_detailed"]
+    assert "the group x plus 1 end group to the power of 2" in tree("(x+1)^2=9")["spoken_detailed"]
     assert pow_node["spoken_context"].startswith("The power expression the group x plus 1")
 
 
@@ -1350,11 +1359,13 @@ def test_power_of_power_is_distinguishable():
 
 
 def test_power_within_product_with_coefficient():
-    # 3x^2 = 12 as Mul(3, Pow(x, 2)): 3 multiplies a power, it is not "of x" directly
+    # 3x^2 = 12 as Mul(3, Pow(x, 2)): the 3 multiplies the powered variable, so it
+    # is its coefficient (changed from role "number", which wrongly said that the
+    # 3 "does not multiply x")
     root = build(op("Mul", [N(3), Pw(X(1), N(2, 3), 1, 4)], 0, 4), N(12, 7))
     three, pow_node = root["children"][0]["children"]
-    assert three["role"] == "number"
-    assert "coefficient" not in three["spoken_quick"]
+    assert three["role"] == "coefficient"
+    assert three["spoken_quick"] == "Coefficient 3"
     assert pow_node["role"] == "power"
     assert pow_node["children"][1]["role"] == "exponent"
 
@@ -1498,7 +1509,7 @@ def test_fraction_followed_by_a_term_is_not_ambiguous():
 def test_group_followed_by_a_term_is_not_ambiguous():
     # 2(x + 3) + 5 = 9
     root = build(op("Add", [two_times_group(), N(5, 11)], 0, 12), N(9, 15))
-    assert "2 times the group x plus 3, plus 5" in root["spoken_detailed"]
+    assert "2 times the group x plus 3 end group plus 5" in root["spoken_detailed"]
     five = root["children"][0]["children"][1]
     assert five["role"] == "constant_term"
     assert "added to the product 2 times the group x plus 3" in five["spoken_context"]
@@ -1564,8 +1575,8 @@ def test_quick_text_is_exact_for_every_new_role():
 
 def test_equation_text_reads_the_new_structures():
     assert tree("2(x+3)=12")["spoken_detailed"] == (
-        "The whole equation. It says that the left side, 2 times the group x plus 3, "
-        "has the same value as the right side, 12."
+        "The whole equation. It says that the left side, 2 times the group x plus 3 "
+        "end group, has the same value as the right side, 12."
     )
     assert tree("(x+1)/2=3")["spoken_detailed"] == (
         "The whole equation. It says that the left side, the fraction with numerator "
@@ -1574,7 +1585,9 @@ def test_equation_text_reads_the_new_structures():
 
 
 def test_group_times_group_phrase_has_a_pause():
-    assert "the group x plus 1, times the group x minus 2" in tree("(x+1)(x-2)=0")["spoken_detailed"]
+    assert "the group x plus 1 end group times the group x minus 2 end group" in (
+        tree("(x+1)(x-2)=0")["spoken_detailed"]
+    )
 
 
 def test_group_in_the_denominator_and_numerator():
@@ -1798,3 +1811,1221 @@ def test_subtracting_a_sum_and_multiplying_a_sum_without_group_nodes_still_say_q
     assert "2 times the quantity x plus 3" in root["children"][0]["spoken_detailed"]
     # and a plain number times an unwrapped sum is NOT given the group-multiplier role
     assert by_role(root, "group_multiplier") == []
+
+
+# ===========================================================================
+# Part 9: review hardening (depth, numbers, roles, nesting, fuzzing)
+# ===========================================================================
+# These tests were added after a full review of engine/explore.py. Tests marked
+# xfail(strict=True) record a KNOWN weakness that needs a design decision; they
+# turn into failures the moment the weakness is fixed, so the marker gets removed.
+
+ALLOWED_ROLES = {
+    "equation", "left_side", "right_side", "coefficient", "variable",
+    "constant_term", "operator", "group", "group_multiplier", "power", "base",
+    "exponent", "fraction", "numerator", "denominator", "number",
+}
+OPERATOR_TYPES = {"Add", "Sub", "Mul", "Div", "Neg"}
+SPOKEN_KEYS = ("spoken_quick", "spoken_detailed", "spoken_context")
+JS_PATH = Path(__file__).parent.parent / "static" / "explorer_keys.js"
+
+
+def check_against_ast(ast, root):
+    """Invariants that must hold for ANY accepted input: same shape, path ids,
+    verbatim spans and values, non-empty spoken text with no symbols or
+    leaked Python values."""
+    seen = set()
+
+    def visit(a, n, expected_id):
+        assert set(n) == EXPLORER_FIELDS
+        assert n["id"] == expected_id
+        assert n["id"] not in seen
+        seen.add(n["id"])
+        assert (n["type"], n["value"], n["span"]) == (a["type"], a.get("value"), list(a["span"]))
+        assert n["role"] in ALLOWED_ROLES
+        assert len(n["children"]) == len(a["children"])
+        for key in SPOKEN_KEYS:
+            text_ = n[key]
+            assert isinstance(text_, str) and text_ and text_ == text_.strip(), (n["id"], key)
+            assert not any(sym in text_ for sym in SYMBOLS), (n["id"], key, text_)
+            assert not re.search(r"\b(None|nan|inf)\b|[{}\[\]]", text_), (n["id"], key, text_)
+        for i, (ca, cn) in enumerate(zip(a["children"], n["children"])):
+            visit(ca, cn, f"{expected_id}.{i}")
+
+    visit(ast, root, "n0")
+
+
+def is_variable_or_powered(node):
+    """x, or x raised to a power (a number multiplying either is a coefficient)."""
+    return node["type"] == "Variable" or (
+        node["type"] == "Pow" and node["children"][0]["type"] == "Variable"
+    )
+
+
+def check_roles(root):
+    """Role rules from plan 7.6 / guide A1-A6, checked on every node."""
+
+    def top_of_negations(parent_chain):
+        # the nearest ancestor that is not a Neg
+        for anc in reversed(parent_chain):
+            if anc["type"] != "Neg":
+                return anc
+        return None
+
+    def visit(n, chain, index):
+        parent = chain[-1] if chain else None
+        other = None
+        if parent is not None and len(parent["children"]) == 2:
+            other = parent["children"][1 - index]
+        t, role = n["type"], n["role"]
+        if parent is None:
+            assert role == "equation"
+        elif parent["type"] == "Equation":
+            assert role == ("left_side", "right_side")[index]
+        elif t == "Variable":
+            assert role == "variable"
+        elif t == "Group":
+            assert role == "group"
+        elif t == "Pow":
+            assert role == "power"
+        elif t == "Fraction":
+            assert role == "fraction"
+        elif t in OPERATOR_TYPES:
+            assert role == "operator"
+        else:
+            assert t == "Number"
+            if parent["type"] == "Pow":
+                assert role == ("base", "exponent")[index]
+            elif parent["type"] == "Fraction":
+                assert role == ("numerator", "denominator")[index]
+            elif parent["type"] == "Mul" and is_variable_or_powered(other):
+                assert role == "coefficient"
+            elif parent["type"] == "Mul" and other["type"] == "Group":
+                assert role == "group_multiplier"
+            else:
+                holder = top_of_negations(chain)
+                in_sum = holder is not None and holder["type"] in ("Add", "Sub", "Equation")
+                assert role == ("constant_term" if in_sum else "number")
+        # the converse: the special roles appear nowhere else
+        if role == "coefficient":
+            assert t == "Number" and parent["type"] == "Mul" and is_variable_or_powered(other)
+        if role == "group_multiplier":
+            assert t == "Number" and parent["type"] == "Mul" and other["type"] == "Group"
+        if role in ("base", "exponent"):
+            assert t == "Number" and parent["type"] == "Pow"
+        if role in ("numerator", "denominator"):
+            assert t == "Number" and parent["type"] == "Fraction"
+        if role in ("left_side", "right_side"):
+            assert parent is not None and parent["type"] == "Equation"
+        for i, c in enumerate(n["children"]):
+            visit(c, chain + [n], i)
+
+    visit(root, [], 0)
+
+
+# ---- generators -------------------------------------------------------------
+
+
+def _random_ast(rng, depth, counter):
+    """A random well-formed expression using every supported node type."""
+
+    def span():
+        counter[0] += 1
+        return [counter[0], counter[0] + 1]
+
+    def leafnode():
+        if rng.random() < 0.45:
+            return {"type": "Variable", "value": "x", "children": [], "span": span()}
+        value = rng.choice([0, 1, 2, 3, 5, 12, -4, 2.5, -0.5, 4.0])
+        return {"type": "Number", "value": value, "children": [], "span": span()}
+
+    if depth <= 0 or rng.random() < 0.25:
+        return leafnode()
+    kind = rng.choice(["Add", "Sub", "Mul", "Div", "Pow", "Neg", "Group", "Fraction"])
+    n_children = 1 if kind in ("Neg", "Group") else 2
+    kids = [_random_ast(rng, depth - 1, counter) for _ in range(n_children)]
+    lo = min(k["span"][0] for k in kids)
+    hi = max(k["span"][1] for k in kids)
+    return {"type": kind, "children": kids, "span": [lo, hi]}
+
+
+def random_equation(seed):
+    rng = random.Random(seed)
+    counter = [0]
+    left = _random_ast(rng, 5, counter)
+    right = _random_ast(rng, 3, counter)
+    return {
+        "type": "Equation",
+        "children": [left, right],
+        "span": [min(left["span"][0], right["span"][0]), counter[0] + 2],
+    }
+
+
+def chain_equation(levels, kind):
+    """An equation whose explorer tree is exactly `levels` deep (Equation = 1)."""
+    node = {"type": "Variable", "value": "x", "children": [], "span": [0, 1]}
+    one = {"type": "Number", "value": 1, "children": [], "span": [0, 1]}
+    # levels: Equation + `wraps` operators + the leaf
+    for _ in range(levels - 2):
+        if kind == "left":
+            node = {"type": "Add", "children": [node, dict(one)], "span": [0, 1]}
+        elif kind == "right":
+            node = {"type": "Add", "children": [dict(one), node], "span": [0, 1]}
+        elif kind == "group":
+            node = {"type": "Group", "children": [node], "span": [0, 1]}
+        else:
+            node = {"type": "Pow", "children": [node, dict(one)], "span": [0, 1]}
+    return {"type": "Equation", "children": [node, dict(one)], "span": [0, 1]}
+
+
+def tree_depth(node):
+    return 1 + max((tree_depth(c) for c in node["children"]), default=0)
+
+
+# ---- 9.1 depth limit (matches the keyboard module) ---------------------------
+
+
+def test_python_depth_limit_matches_the_keyboard_module():
+    source = JS_PATH.read_text(encoding="utf-8")
+    match = re.search(r"var MAX_DEPTH = (\d+);", source)
+    assert match, "MAX_DEPTH not found in static/explorer_keys.js"
+    assert MAX_DEPTH == int(match.group(1))
+
+
+@pytest.mark.parametrize("kind", ["left", "right", "group", "pow"])
+def test_tree_exactly_at_the_depth_limit_builds_with_full_text(kind):
+    ast = chain_equation(MAX_DEPTH, kind)
+    root = build_explorer_tree(ast)
+    assert tree_depth(root) == MAX_DEPTH
+    check_against_ast(ast, root)
+    check_roles(root)
+
+
+@pytest.mark.parametrize("kind", ["left", "right", "group", "pow"])
+def test_tree_one_level_too_deep_is_an_explorer_error(kind):
+    with pytest.raises(ExplorerError, match=f"more than {MAX_DEPTH} levels"):
+        build_explorer_tree(chain_equation(MAX_DEPTH + 1, kind))
+
+
+def test_very_deep_tree_is_an_explorer_error_not_a_recursion_error():
+    with pytest.raises(ExplorerError):
+        build_explorer_tree(chain_equation(3000, "left"))
+
+
+def test_cyclic_ast_is_an_explorer_error_not_a_recursion_error():
+    loop = {"type": "Add", "children": [], "span": [0, 1]}
+    loop["children"] = [loop, {"type": "Number", "value": 1, "children": [], "span": [0, 1]}]
+    ast = {"type": "Equation", "children": [loop, N(2)], "span": [0, 5]}
+    with pytest.raises(ExplorerError, match="levels deep"):
+        build_explorer_tree(ast)
+
+
+def test_deep_error_reports_the_path_of_the_node_that_is_too_deep():
+    with pytest.raises(ExplorerError, match=r"ast(\.children\[\d\])+: the tree is more than"):
+        build_explorer_tree(chain_equation(MAX_DEPTH + 5, "left"))
+
+
+# ---- 9.2 numeric edge cases ----------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_numbers_are_rejected(bad):
+    for place in ("term", "exponent"):
+        num = leaf("Number", 0, 1, bad)
+        left = op("Add", [X(), num], 0, 4) if place == "term" else Pw(X(), num)
+        with pytest.raises(ExplorerError, match="finite"):
+            build_explorer_tree(eq(left, N(1, 8)))
+
+
+def test_huge_integer_exponent_does_not_overflow():
+    big = 10**400
+    root = build(Pw(X(), N(big, 2)), N(1, 8))
+    power = root["children"][0]
+    assert power["role"] == "left_side"
+    assert power["children"][1]["role"] == "exponent"
+    assert "factor" in power["spoken_detailed"]
+
+
+@pytest.mark.parametrize("value, expect_factor_words", [
+    (0, False), (1, False), (2.0, False), (4, True), (4.0, True), (7, True),
+])
+def test_exponent_wording_is_exact_for_small_integers(value, expect_factor_words):
+    root = build(Pw(X(), N(value, 2)), N(1, 8))
+    power = root["children"][0]
+    detailed = power["spoken_detailed"]
+    if value in (2, 2.0):
+        assert "x squared means x is multiplied by itself" in detailed
+    elif expect_factor_words:
+        assert f"used as a factor {int(value)} times" in detailed
+    else:
+        assert "multiplied by itself" not in detailed
+        assert "factor" not in detailed
+        assert f"x is raised to the power {value}" in detailed
+
+
+def test_negative_base_is_marked_as_a_quantity():
+    root = build(Pw(N(-2), N(2, 4), 0, 5), N(4, 8))
+    power = root["children"][0]
+    assert power["children"][0]["role"] == "base"
+    assert "The base is the quantity negative 2" in power["spoken_detailed"]
+    # x - 2 and x + (-2) must not be spoken the same way
+    sub = build(op("Sub", [X(), N(2, 4)], 0, 5), N(0, 8))["children"][0]["spoken_detailed"]
+    add = build(op("Add", [X(), N(-2, 4)], 0, 6), N(0, 9))["children"][0]["spoken_detailed"]
+    assert "x minus 2" in sub and "x plus negative 2" in add
+
+
+# ---- 9.3 roles: exact maps for the review fixtures ------------------------------
+
+EXPECTED_ROLES = {
+    "2(x+3)^2-(x-1)/4=5": {
+        "n0": "equation", "n0.0": "left_side", "n0.0.0": "operator",
+        "n0.0.0.1": "power", "n0.0.0.1.0": "group", "n0.0.0.1.0.0": "operator",
+        "n0.0.0.1.0.0.0": "variable", "n0.0.0.1.0.0.1": "constant_term",
+        "n0.0.0.1.1": "exponent", "n0.0.1": "fraction", "n0.0.1.0": "operator",
+        "n0.0.1.0.0": "variable", "n0.0.1.0.1": "constant_term",
+        "n0.0.1.1": "denominator", "n0.1": "right_side",
+    },
+    "((x+1)(x-2)+3)^2=16": {
+        "n0.0": "left_side", "n0.0.0": "group", "n0.0.0.0": "operator",
+        "n0.0.0.0.0": "operator",
+        # two groups multiplied: neither is a multiplier (that needs a number)
+        "n0.0.0.0.0.0": "group", "n0.0.0.0.0.0.0": "operator",
+        "n0.0.0.0.0.0.0.0": "variable", "n0.0.0.0.0.0.0.1": "constant_term",
+        "n0.0.0.0.0.1": "group", "n0.0.0.0.0.1.0": "operator",
+        "n0.0.0.0.0.1.0.0": "variable", "n0.0.0.0.0.1.0.1": "constant_term",
+        "n0.0.0.0.1": "constant_term", "n0.0.1": "exponent", "n0.1": "right_side",
+    },
+    "3x^2-2x+1=-(x-4)": {
+        "n0.0": "left_side", "n0.0.0": "operator", "n0.0.0.0": "operator",
+        "n0.0.0.0.1": "power", "n0.0.0.0.1.0": "variable",
+        "n0.0.0.0.1.1": "exponent", "n0.0.0.1": "operator",
+        "n0.0.0.1.0": "coefficient", "n0.0.0.1.1": "variable",
+        "n0.0.1": "constant_term", "n0.1": "right_side", "n0.1.0": "group",
+        "n0.1.0.0": "operator", "n0.1.0.0.0": "variable",
+        "n0.1.0.0.1": "constant_term",
+    },
+    "(2x+1)/(x-3)=4": {
+        # a Fraction that is a whole side takes the side role (guide A2)
+        "n0.0": "left_side",
+        # a non-number numerator/denominator keeps its own role (guide A6)
+        "n0.0.0": "operator", "n0.0.0.0": "operator", "n0.0.0.0.0": "coefficient",
+        "n0.0.0.0.1": "variable", "n0.0.0.1": "constant_term",
+        "n0.0.1": "operator", "n0.0.1.0": "variable", "n0.0.1.1": "constant_term",
+        "n0.1": "right_side",
+    },
+    "((x+1)/2+3)/4=1": {
+        "n0.0": "left_side", "n0.0.0": "operator", "n0.0.0.0": "fraction",
+        "n0.0.0.0.0": "operator", "n0.0.0.0.0.0": "variable",
+        "n0.0.0.0.0.1": "constant_term", "n0.0.0.0.1": "denominator",
+        "n0.0.0.1": "constant_term", "n0.0.1": "denominator", "n0.1": "right_side",
+    },
+    "2(x+1)+3(x-1)=10": {
+        "n0.0": "left_side", "n0.0.0": "operator", "n0.0.0.0": "group_multiplier",
+        "n0.0.0.1": "group", "n0.0.0.1.0": "operator",
+        "n0.0.0.1.0.0": "variable", "n0.0.0.1.0.1": "constant_term",
+        "n0.0.1": "operator", "n0.0.1.0": "group_multiplier", "n0.0.1.1": "group",
+        "n0.0.1.1.0": "operator", "n0.0.1.1.0.0": "variable",
+        "n0.0.1.1.0.1": "constant_term", "n0.1": "right_side",
+    },
+    "(x^2+1)^3=8": {
+        "n0.0": "left_side", "n0.0.0": "group", "n0.0.0.0": "operator",
+        "n0.0.0.0.0": "power", "n0.0.0.0.0.0": "variable",
+        "n0.0.0.0.0.1": "exponent", "n0.0.0.0.1": "constant_term",
+        "n0.0.1": "exponent", "n0.1": "right_side",
+    },
+}
+
+
+@pytest.mark.parametrize("name", REVIEW_FIXTURES)
+def test_review_fixture_roles_are_exactly_as_expected(name):
+    root = build_explorer_tree(REVIEW_FIXTURES[name][1])
+    actual = {n["id"]: n["role"] for n in flat(root)}
+    expected = EXPECTED_ROLES[name]
+    assert {i: actual[i] for i in expected} == expected
+
+
+@pytest.mark.parametrize("name", ALL_FIXTURES)
+def test_every_fixture_satisfies_the_general_invariants(name):
+    ast = ALL_FIXTURES[name][1]
+    root = build_explorer_tree(ast)
+    check_against_ast(ast, root)
+    check_roles(root)
+
+
+@pytest.mark.parametrize("name", REVIEW_FIXTURES)
+def test_review_fixture_shape_and_spans(name):
+    source, ast = REVIEW_FIXTURES[name]
+    assert ast["span"] == [0, len(source)]
+    for node in (n for n in flat_ast(ast)):
+        start, end = node["span"]
+        assert 0 <= start < end <= len(source)
+        assert node["type"] in FIXTURE_NODE_TYPES
+        if node["type"] in {"Number", "Variable"}:
+            assert node["children"] == [] and "value" in node
+        else:
+            assert node["children"] and "value" not in node
+        starts = [c["span"][0] for c in node["children"]]
+        assert starts == sorted(starts)
+        for child in node["children"]:
+            assert start <= child["span"][0] and child["span"][1] <= end
+
+
+def flat_ast(node):
+    yield node
+    for c in node["children"]:
+        yield from flat_ast(c)
+
+
+def test_review_fixture_spans_slice_to_the_expected_text():
+    src, ast = REVIEW_FIXTURES["2(x+3)^2-(x-1)/4=5"]
+    left = ast["children"][0]
+    mul, fraction = left["children"]
+    assert src[slice(*mul["span"])] == "2(x + 3)^2"
+    assert src[slice(*fraction["span"])] == "(x - 1)/4"
+    assert src[slice(*fraction["children"][0]["span"])] == "x - 1"  # brackets excluded
+    src, ast = REVIEW_FIXTURES["(2x+1)/(x-3)=4"]
+    num, den = ast["children"][0]["children"]
+    assert (src[slice(*num["span"])], src[slice(*den["span"])]) == ("2x + 1", "x - 3")
+
+
+# ---- 9.4 roles and invariants on many random trees --------------------------------
+
+
+@pytest.mark.parametrize("seed", range(150))
+def test_random_trees_keep_roles_ids_spans_and_text_consistent(seed):
+    ast = random_equation(seed)
+    before = copy.deepcopy(ast)
+    root = build_explorer_tree(ast)
+    assert ast == before  # input untouched
+    check_against_ast(ast, root)
+    check_roles(root)
+    assert build_explorer_tree(ast) == root  # deterministic
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_random_trees_never_say_the_same_context_twice_in_one_sibling_group(seed):
+    root = build_explorer_tree(random_equation(seed + 1000))
+    for node in flat(root):
+        kids = node["children"]
+        if len(kids) == 2 and kids[0]["type"] != kids[1]["type"]:
+            assert kids[0]["spoken_context"] != kids[1]["spoken_context"]
+
+
+# ---- 9.5 group multipliers, powers and fractions in many positions -------------------
+
+
+def test_group_multiplier_on_the_right_side():
+    group = G(x_plus_3())
+    root = build(N(10, 0), op("Mul", [N(2, 4), group], 4, 12))
+    right = root["children"][1]
+    two, grp = right["children"]
+    assert (right["role"], two["role"], grp["role"]) == ("right_side", "group_multiplier", "group")
+    assert "It is part of the right side of the equation." in two["spoken_context"]
+    assert "left side" not in two["spoken_context"]
+
+
+def test_group_multiplier_after_a_subtraction():
+    # x - 3(x + 1)
+    product = op("Mul", [N(3, 4), G(op("Add", [X(6), N(1, 10)], 6, 11), 5, 12)], 4, 12)
+    root = build(op("Sub", [X(), product], 0, 12), N(0, 15))
+    mul = root["children"][0]["children"][1]
+    three, grp = mul["children"]
+    assert (three["role"], grp["role"]) == ("group_multiplier", "group")
+    assert "is subtracted from the variable x" in mul["spoken_context"]
+    assert "multiplies the entire group x plus 1" in three["spoken_context"]
+
+
+def test_group_multiplier_inside_a_group_inside_a_power():
+    # (2(x + 3))^2
+    inner = op("Mul", [N(2, 1), G(x_plus_3(), 2, 9)], 1, 9)
+    root = build(Pw(G(inner, 0, 10), N(2, 11), 0, 12), N(4, 15))
+    multiplier = find(root, "Number", "group_multiplier")
+    assert len(multiplier) == 1
+    assert multiplier[0]["spoken_context"].startswith("The multiplier 2 multiplies the entire group x plus 3.")
+
+
+def test_group_multiplier_in_a_fraction_numerator_and_group_holding_a_power():
+    # 2(x + 3)/5 with a Fraction numerator Mul, and 2(x^2 + 1)
+    numerator = op("Mul", [N(2, 1), G(x_plus_3(), 2, 9)], 1, 9)
+    root = build(Fr(numerator, N(5, 11), 0, 12), N(1, 16))
+    two = find(root, "Number", "group_multiplier")[0]
+    assert two["id"] == "n0.0.0.0"
+    squared = op("Add", [Pw(X(2), N(2, 4), 2, 5), N(1, 8)], 2, 9)
+    root = build(op("Mul", [N(2), G(squared, 1, 10)], 0, 10), N(0, 14))
+    assert find(root, "Number", "group_multiplier")[0]["spoken_context"].startswith(
+        "The multiplier 2 multiplies the entire group x to the power of 2, plus 1."
+    )
+
+
+def test_two_group_multipliers_in_one_sum_each_name_their_own_group():
+    root = build_explorer_tree(REVIEW_FIXTURES["2(x+1)+3(x-1)=10"][1])
+    two, three = find(root, "Number", "group_multiplier")
+    assert "the group x plus 1" in two["spoken_context"]
+    assert "x minus 1" not in two["spoken_context"]
+    assert "the group x minus 1" in three["spoken_context"]
+    assert "x plus 1" not in three["spoken_context"]
+    assert two["spoken_context"] != three["spoken_context"]
+
+
+def test_nested_multipliers_each_belong_to_their_own_group():
+    root = tree("2(3(x+1)+4)=20")
+    outer, inner = find(root, "Number", "group_multiplier")
+    assert outer["spoken_context"].startswith("The multiplier 2 multiplies the entire group 3 times")
+    assert inner["spoken_context"].startswith("The multiplier 3 multiplies the entire group x plus 1.")
+
+
+def test_power_inside_a_group_inside_a_power():
+    root = build_explorer_tree(REVIEW_FIXTURES["(x^2+1)^3=8"][1])
+    outer = root["children"][0]
+    inner = root["children"][0]["children"][0]["children"][0]["children"][0]
+    assert inner["role"] == "power" and outer["role"] == "left_side"
+    assert "the group x to the power of 2, plus 1 end group to the power of 3" in root["spoken_detailed"]
+    assert "cubed means" in outer["spoken_detailed"]
+    assert "x squared means x is multiplied by itself" in inner["spoken_detailed"]
+    assert "belongs to the base x" in inner["children"][1]["spoken_context"]
+    # the 2 and the 3 are told apart
+    exponents = find(root, "Number", "exponent")
+    assert [e["spoken_quick"] for e in exponents] == ["Exponent 2", "Exponent 3"]
+    assert exponents[0]["spoken_context"] != exponents[1]["spoken_context"]
+
+
+def test_fraction_with_compound_numerator_and_denominator():
+    root = build_explorer_tree(REVIEW_FIXTURES["(2x+1)/(x-3)=4"][1])
+    assert "the fraction with numerator 2x plus 1 and denominator x minus 3" in root["spoken_detailed"]
+    fraction = root["children"][0]
+    assert "the fraction means the quantity 2x plus 1 divided by the quantity x minus 3" in (
+        fraction["spoken_detailed"]
+    )
+    numerator, denominator = fraction["children"]
+    assert "numerator of a fraction whose denominator is x minus 3" in numerator["spoken_detailed"]
+    assert "denominator of a fraction whose numerator is 2x plus 1" in denominator["spoken_detailed"]
+
+
+def test_fraction_nested_in_a_numerator_names_both_fractions():
+    root = build_explorer_tree(REVIEW_FIXTURES["((x+1)/2+3)/4=1"][1])
+    outer = root["children"][0]
+    inner = find(root, "Fraction", "fraction")[0]
+    assert inner["id"] == "n0.0.0.0"
+    assert "x plus 1 as its numerator and 2 as its denominator" in inner["spoken_detailed"]
+    assert "is added to the constant 3" in inner["spoken_context"]
+    assert "as its numerator and 4 as its denominator" in outer["spoken_detailed"]
+    assert inner["spoken_context"] != outer["spoken_context"]
+
+
+def test_fraction_with_negative_denominator_and_negative_numerator():
+    root = build(Fr(N(-3), N(-2, 3), 0, 6), N(1, 10))
+    num, den = root["children"][0]["children"]
+    assert (num["spoken_quick"], den["spoken_quick"]) == ("Numerator negative 3", "Denominator negative 2")
+    assert "the fraction with numerator negative 3 and denominator negative 2" in root["spoken_detailed"]
+
+
+# ---- 9.6 subtraction, negatives, division: wording stays mathematically exact ---------
+
+
+def test_subtraction_chain_and_nested_subtraction_read_differently():
+    chain = build(op("Sub", [op("Sub", [X(), N(2, 4)], 0, 5), N(3, 8)], 0, 9), N(0, 12))
+    nested = build(op("Sub", [X(), op("Sub", [N(2, 4), N(3, 8)], 4, 9)], 0, 9), N(0, 12))
+    assert "x minus 2 minus 3," in chain["spoken_detailed"]
+    assert "x minus the quantity 2 minus 3," in nested["spoken_detailed"]
+    # direction: the second part is taken away from the first
+    assert "takes the constant 3 away from the difference x minus 2" in chain["children"][0]["spoken_detailed"]
+    assert "takes the difference 2 minus 3 away from the variable x" in nested["children"][0]["spoken_detailed"]
+
+
+def test_subtracting_a_negative_number_is_not_adding():
+    sub = build(op("Sub", [X(), N(-3, 4)], 0, 6), N(0, 9))
+    left = sub["children"][0]
+    constant = left["children"][1]
+    assert constant["role"] == "constant_term"
+    assert constant["spoken_quick"] == "Constant term negative 3"
+    assert "x minus negative 3" in sub["spoken_detailed"]
+    assert "Negative 3 is a constant term" in constant["spoken_detailed"]
+    assert "It is subtracted from the variable x." in constant["spoken_detailed"]
+    assert "takes the constant negative 3 away from the variable x" in left["spoken_detailed"]
+
+
+def test_negated_variable_and_negated_group():
+    root = build(op("Neg", [X(1)], 0, 2), N(4, 6))
+    neg = root["children"][0]
+    assert (neg["role"], neg["type"]) == ("left_side", "Neg")
+    assert "It reads negative x. Negation. It changes the sign of the variable x." in neg["spoken_detailed"]
+    assert neg["children"][0]["spoken_context"].startswith("The variable x has its sign changed.")
+    root = build_explorer_tree(REVIEW_FIXTURES["3x^2-2x+1=-(x-4)"][1])
+    right = root["children"][1]
+    assert "negative the group x minus 4" in right["spoken_detailed"]
+    assert right["children"][0]["role"] == "group"
+    assert "The entire group has its sign changed." in right["children"][0]["spoken_detailed"]
+
+
+def test_inline_division_of_two_groups_keeps_direction():
+    divided = op("Div", [G(x_plus_3(), 0, 7), G(op("Sub", [X(10), N(1, 14)], 10, 15), 9, 16)], 0, 16)
+    root = build(divided, N(2, 20))
+    top, bottom = root["children"][0]["children"]
+    assert top["role"] == bottom["role"] == "group"
+    assert "the group x plus 3 end group divided by the group x minus 1 end group" in root["spoken_detailed"]
+    assert "The entire group is divided by the group x minus 1." in top["spoken_detailed"]
+    assert "The entire group divides the group x plus 3." in bottom["spoken_detailed"]
+
+
+def test_division_is_not_given_fraction_roles():
+    root = build(op("Div", [X(), N(2, 4)], 0, 5), N(3, 8))
+    div = root["children"][0]
+    assert div["children"][1]["role"] == "number"
+    assert not find(root, "Number", "denominator")
+
+
+def test_like_terms_and_repeated_numbers_are_told_apart():
+    # 2(x + 1) + 3(x - 1): the 1s and the x's appear twice, ids and text must differ
+    root = build_explorer_tree(REVIEW_FIXTURES["2(x+1)+3(x-1)=10"][1])
+    ones = [n for n in flat(root) if n["type"] == "Number" and n["value"] == 1]
+    assert len(ones) == 2
+    assert ones[0]["spoken_detailed"] != ones[1]["spoken_detailed"]
+    assert ones[0]["spoken_context"] != ones[1]["spoken_context"]
+
+
+# ---- 9.7 many structures at once --------------------------------------------------------
+
+
+def test_everything_combined_reads_in_the_right_order():
+    root = build_explorer_tree(REVIEW_FIXTURES["2(x+3)^2-(x-1)/4=5"][1])
+    assert root["spoken_detailed"] == (
+        "The whole equation. It says that the left side, 2 times the group x plus 3 "
+        "end group to the power of 2, minus the fraction with numerator x minus 1 and "
+        "denominator 4, has the same value as the right side, 5."
+    )
+    fraction = find(root, "Fraction", "fraction")[0]
+    assert fraction["spoken_context"].startswith(
+        "The fraction with numerator x minus 1 and denominator 4 is subtracted from "
+        "the product 2 times the group x plus 3, to the power of 2."
+    )
+    power = find(root, "Pow", "power")[0]
+    assert "is multiplied by the number 2" in power["spoken_context"]
+
+
+def test_nested_groups_inside_a_power_inside_an_equation():
+    root = build_explorer_tree(REVIEW_FIXTURES["((x+1)(x-2)+3)^2=16"][1])
+    groups = find(root, "Group", "group")
+    assert [g["id"] for g in groups] == ["n0.0.0", "n0.0.0.0.0.0", "n0.0.0.0.0.1"]
+    outer, first, second = groups
+    assert "It is the base, raised to the power 2." in outer["spoken_detailed"]
+    assert "The entire group is multiplied by the group x minus 2." in first["spoken_detailed"]
+    assert "The entire group is multiplied by the group x plus 1." in second["spoken_detailed"]
+    assert len({g["spoken_context"] for g in groups}) == 3
+    assert find(root, "Number", "group_multiplier") == []
+
+
+def test_deeply_nested_groups_inside_the_limit_stay_distinct():
+    # ((((((x + 1)))))) = 3, six groups deep
+    node = op("Add", [X(), N(1, 4)], 0, 5)
+    for i in range(6):
+        node = G(node, 0, 5 + i)
+    root = build(node, N(3, 20))
+    groups = find(root, "Group", "left_side") + find(root, "Group", "group")
+    assert len(groups) == 6
+    assert len({g["spoken_context"] for g in groups}) == 6
+    assert len({g["spoken_detailed"] for g in groups}) == 6
+    check_roles(root)
+
+
+# ---- 9.8 malformed input -----------------------------------------------------------------
+
+
+def _ast_with(path_to_fault, mutate):
+    ast = copy.deepcopy(REVIEW_FIXTURES["2(x+1)+3(x-1)=10"][1])
+    node = ast
+    for index in path_to_fault:
+        node = node["children"][index]
+    mutate(node)
+    return ast
+
+
+@pytest.mark.parametrize("path, expected", [
+    ((), "ast"),
+    ((0,), r"ast\.children\[0\]"),
+    ((0, 1), r"ast\.children\[0\]\.children\[1\]"),
+    ((0, 1, 1, 0), r"ast\.children\[0\]\.children\[1\]\.children\[1\]\.children\[0\]"),
+])
+def test_missing_span_is_reported_at_the_right_depth(path, expected):
+    ast = _ast_with(path, lambda n: n.pop("span"))
+    with pytest.raises(ExplorerError, match=f"{expected}: node is missing 'span'"):
+        build_explorer_tree(ast)
+
+
+@pytest.mark.parametrize("children", [None, (), "ab", {}, 3])
+def test_children_that_are_not_a_list_are_rejected(children):
+    ast = _ast_with((0,), lambda n: n.__setitem__("children", children))
+    with pytest.raises(ExplorerError, match="'children' must be a list"):
+        build_explorer_tree(ast)
+
+
+@pytest.mark.parametrize("bad_child", [None, 3, "x", [], ("Number",), object()])
+def test_a_child_that_is_not_a_node_is_rejected_with_its_path(bad_child):
+    ast = _ast_with((0,), lambda n: n["children"].__setitem__(1, bad_child))
+    with pytest.raises(ExplorerError, match=r"ast\.children\[0\]\.children\[1\]: node must be a dict"):
+        build_explorer_tree(ast)
+
+
+@pytest.mark.parametrize("bad_type", [None, 5, ["Add"], b"Add", {"t": 1}])
+def test_a_node_type_that_is_not_a_string_is_rejected(bad_type):
+    ast = _ast_with((0, 0), lambda n: n.__setitem__("type", bad_type))
+    with pytest.raises(ExplorerError, match="'type' must be a string"):
+        build_explorer_tree(ast)
+
+
+@pytest.mark.parametrize("span", [
+    True, False, [True, 2], [0, True], [0.0, 1.0], [1, 1], [2, 1], [-3, -1],
+    [None, 1], "01", {"start": 0, "end": 1}, [0, 1, 2], [], range(0, 2),
+])
+def test_invalid_spans_are_rejected_on_any_node(span):
+    ast = _ast_with((0, 1, 1, 0), lambda n: n.__setitem__("span", span))
+    with pytest.raises(ExplorerError, match=r"children\[0\]\.children\[1\]\.children\[1\]\.children\[0\]: 'span'"):
+        build_explorer_tree(ast)
+
+
+@pytest.mark.parametrize("node_type", [
+    "Power", "Negate", "Paren", "Parenthesis", "Subtract", "Multiply", "Divide",
+    "Frac", "Equals", "Eq", "Less", "Call", "Mod", "Log", "equation", "EQUATION",
+    "Add ", " Add", "Group2", "Pos",
+])
+def test_names_other_than_the_agreed_node_types_are_rejected(node_type):
+    ast = _ast_with((0, 1, 1), lambda n: n.__setitem__("type", node_type))
+    with pytest.raises(ExplorerError, match=r"children\[1\]\.children\[1\]: unsupported node type"):
+        build_explorer_tree(ast)
+
+
+def test_unsupported_type_inside_group_fraction_and_pow_is_reported():
+    sqrt = {"type": "Sqrt", "children": [N(4)], "span": [0, 3]}
+    for wrapper in (G(sqrt), Fr(sqrt, N(2)), Pw(sqrt, N(2)), op("Neg", [sqrt], 0, 4)):
+        with pytest.raises(ExplorerError, match="unsupported node type 'Sqrt'"):
+            build_explorer_tree(eq(wrapper, N(1, 8)))
+
+
+def test_value_on_equation_group_pow_fraction_neg_div_is_rejected():
+    for node in (
+        G(x_plus_3()), Pw(X(), N(2, 2)), Fr(X(), N(2, 3)), op("Neg", [X(1)], 0, 2),
+        op("Div", [X(), N(2, 4)], 0, 5),
+    ):
+        node = dict(node, value=1)
+        with pytest.raises(ExplorerError, match="must not have a 'value'"):
+            build_explorer_tree(eq(node, N(1, 8)))
+    with pytest.raises(ExplorerError, match="must not have a 'value'"):
+        build_explorer_tree(dict(eq(X(), N(1, 8)), value=0))
+
+
+@pytest.mark.parametrize("value", ["3", None, [3], (3,), {"v": 3}, b"3", complex(1, 0)])
+def test_number_values_must_be_int_or_float(value):
+    bad = {"type": "Number", "children": [], "span": [0, 1], "value": value}
+    with pytest.raises(ExplorerError, match="numeric"):
+        build_explorer_tree(eq(op("Add", [X(), bad], 0, 3), N(1, 8)))
+
+
+def test_extra_unknown_keys_are_ignored_and_not_copied():
+    ast = copy.deepcopy(FIXTURES["3x+5=14"][1])
+    ast["children"][0]["children"][1]["note"] = "parser debug info"
+    root = build_explorer_tree(ast)
+    assert all(set(n) == EXPLORER_FIELDS for n in flat(root))
+
+
+def test_tuple_spans_are_accepted_and_come_out_as_lists():
+    ast = copy.deepcopy(FIXTURES["3x+5=14"][1])
+    ast["children"][1]["span"] = (9, 11)
+    root = build_explorer_tree(ast)
+    assert root["children"][1]["span"] == [9, 11]
+    assert isinstance(root["children"][1]["span"], list)
+
+
+@pytest.mark.parametrize("seed", range(300))
+def test_random_corruption_gives_an_explorer_error_or_a_valid_tree(seed):
+    rng = random.Random(seed)
+    name = rng.choice(list(ALL_FIXTURES))
+    ast = copy.deepcopy(ALL_FIXTURES[name][1])
+    nodes = list(flat_ast(ast))
+    weird = [None, 0, -1, "", "x", [], {}, [0, 1], (0, 1), 1.5, True, float("nan"),
+             float("inf"), object(), 10**400, [[]], "Add", "Group", {"type": "Number"}]
+    for _ in range(rng.randint(1, 3)):
+        target = rng.choice(nodes)
+        key = rng.choice(["type", "value", "children", "span"])
+        if rng.random() < 0.35:
+            target.pop(key, None)
+        else:
+            target[key] = rng.choice(weird)
+    try:
+        root = build_explorer_tree(ast)
+    except ExplorerError:
+        return
+    # accepted: it must then be a fully consistent tree
+    check_against_ast(ast, root)
+
+
+# ---- 9.9 input immutability, stable ids and child order ----------------------------------------
+
+
+@pytest.mark.parametrize("name", ALL_FIXTURES)
+def test_input_is_untouched_and_output_shares_nothing_with_it(name):
+    ast = copy.deepcopy(ALL_FIXTURES[name][1])
+    snapshot = copy.deepcopy(ast)
+    root = build_explorer_tree(ast)
+    pristine = copy.deepcopy(root)
+    assert ast == snapshot
+    for node in list(flat(root)):  # scribble over the result
+        node["children"].append("junk")
+        node["span"].append(99)
+        node["spoken_quick"] = "changed"
+    assert ast == snapshot  # nothing in the input was shared with the output
+    assert build_explorer_tree(ast) == pristine  # and the next call is unaffected
+
+
+def test_a_shared_node_object_used_twice_is_converted_independently():
+    shared = X(2)
+    ast = eq(op("Add", [shared, shared], 0, 5), N(1, 8))
+    root = build_explorer_tree(ast)
+    a, b = root["children"][0]["children"]
+    assert (a["id"], b["id"]) == ("n0.0.0", "n0.0.1")
+    assert a is not b and a["children"] is not b["children"]
+    assert ast["children"][0]["children"][0] is ast["children"][0]["children"][1]
+
+
+@pytest.mark.parametrize("name", ALL_FIXTURES)
+def test_ids_are_unique_path_based_and_follow_child_order(name):
+    root = build_explorer_tree(ALL_FIXTURES[name][1])
+
+    def visit(node, expected_id):
+        assert node["id"] == expected_id
+        for i, child in enumerate(node["children"]):
+            visit(child, f"{expected_id}.{i}")
+
+    visit(root, "n0")
+    ids = [n["id"] for n in flat(root)]
+    assert len(ids) == len(set(ids))
+    assert all(re.fullmatch(r"n0(\.\d+)*", i) for i in ids)
+
+
+@pytest.mark.parametrize("name", ALL_FIXTURES)
+def test_ids_do_not_depend_on_values_or_spans(name):
+    ast = copy.deepcopy(ALL_FIXTURES[name][1])
+    ids = [n["id"] for n in flat(build_explorer_tree(ast))]
+    for node in flat_ast(ast):
+        node["span"] = [node["span"][0] + 100, node["span"][1] + 200]
+        if node["type"] == "Number":
+            node["value"] = node["value"] + 7
+    assert [n["id"] for n in flat(build_explorer_tree(ast))] == ids
+
+
+def test_children_keep_ast_order_even_when_spans_say_otherwise():
+    # the engine never re-sorts; the parser must supply children in reading order
+    ast = copy.deepcopy(FIXTURES["3x+5=14"][1])
+    left = ast["children"][0]
+    left["children"][0]["span"], left["children"][1]["span"] = [5, 6], [0, 2]
+    root = build_explorer_tree(ast)
+    assert [c["type"] for c in root["children"][0]["children"]] == ["Mul", "Number"]
+    assert [c["span"] for c in root["children"][0]["children"]] == [[5, 6], [0, 2]]
+
+
+def test_spans_are_copied_verbatim_and_nesting_is_not_checked():
+    # documented limit: only 0 <= start < end is validated, not containment
+    ast = copy.deepcopy(FIXTURES["3x+5=14"][1])
+    ast["children"][0]["children"][1]["span"] = [500, 900]
+    root = build_explorer_tree(ast)
+    assert root["children"][0]["children"][1]["span"] == [500, 900]
+
+
+# ---- 9.10 group boundaries (formerly strict xfail: fixed in the refinement round) -----------------
+
+
+def test_nested_group_endings_are_distinguishable_in_the_whole_equation_reading():
+    inner = G(op("Add", [X(), N(1)], 0, 3), 0, 4)
+    three_times = op("Mul", [N(3), inner], 0, 4)
+    closes_inside = op("Mul", [N(2), G(op("Add", [three_times, N(4)], 0, 5), 0, 6)], 0, 7)
+    closes_before = op("Add", [op("Mul", [N(2), G(three_times, 0, 5)], 0, 6), N(4)], 0, 8)
+    first = build(closes_inside, N(20))["spoken_detailed"]
+    second = build(closes_before, N(20))["spoken_detailed"]
+    assert first != second
+
+
+def test_group_ending_inside_or_before_a_product_is_distinguishable():
+    inside = G(op("Add", [N(2), op("Mul", [G(X()), N(2)], 0, 3)], 0, 4), 0, 5)
+    before = op("Mul", [G(op("Add", [N(2), G(X())], 0, 4), 0, 5), N(2)], 0, 6)
+    assert build(inside, N(1))["spoken_detailed"] != build(before, N(1))["spoken_detailed"]
+
+
+# ===========================================================================
+# Part 10: refinement round
+#   Decision 1: coefficient of a powered variable (3x^2)
+#   Decision 2: spoken group boundaries in whole-expression readings
+#   plus sentence capitalisation and repeated long bases
+# ===========================================================================
+
+
+def powered(coef, exp=2, start=0):
+    """coef * x^exp as Mul(Number, Pow(Variable, Number))"""
+    return op("Mul", [N(coef, start), Pw(X(start + 1), N(exp, start + 3), start + 1, start + 5)],
+              start, start + 5)
+
+
+# ---- 10.1 coefficient of a powered variable -------------------------------------
+
+
+@pytest.mark.parametrize("exp, phrase", [(2, "x to the power of 2"), (3, "x to the power of 3")])
+def test_number_times_powered_variable_is_a_coefficient(exp, phrase):
+    root = build(powered(3, exp), N(12, 12))
+    mul = root["children"][0]
+    three, power = mul["children"]
+    base, exponent = power["children"]
+    assert (three["role"], three["spoken_quick"]) == ("coefficient", "Coefficient 3")
+    assert (power["role"], base["role"], exponent["role"]) == ("power", "variable", "exponent")
+    assert exponent["spoken_quick"] == f"Exponent {exp}"
+    assert three["spoken_detailed"] == (
+        f"3 is the coefficient of {phrase}. It tells you {phrase} is multiplied by 3, "
+        f"so the term means 3 times {phrase}. The exponent belongs to x alone, not to 3."
+    )
+    assert three["spoken_context"] == (
+        f"The coefficient 3 belongs to {phrase}: it is multiplied by 3. "
+        f"Together they form the term 3 times {phrase}."
+    )
+    # the other nodes now describe the same structure consistently
+    assert "multiplied by the coefficient 3" in power["spoken_context"]
+    assert "combines the coefficient 3 and the expression" in mul["spoken_detailed"]
+    assert "The power is worked out first, then multiplied by 3." in mul["spoken_detailed"]
+    assert "does not multiply x" not in spoken(three)
+    assert "not a coefficient" not in spoken(three)
+
+
+def test_exponent_keeps_its_own_role_and_wording_under_a_coefficient():
+    root = build(powered(3, 2), N(12, 12))
+    exponent = by_role(root, "exponent")[0]
+    assert exponent["spoken_detailed"].startswith("2 is the exponent. It indicates that x is multiplied by itself.")
+    assert "It is not a constant term or a coefficient" in exponent["spoken_detailed"]
+    assert exponent["spoken_context"] == "The exponent 2 belongs to the base x. Together they form x to the power of 2."
+    assert [n["value"] for n in by_role(root, "coefficient")] == [3]
+
+
+def test_powered_variable_first_then_number():
+    # x^2 * 3
+    mul = op("Mul", [Pw(X(), N(2, 2), 0, 3), N(3, 6)], 0, 7)
+    root = build(mul, N(12, 10))
+    power, three = root["children"][0]["children"]
+    assert (power["role"], three["role"]) == ("power", "coefficient")
+    assert "coefficient of x to the power of 2" in three["spoken_detailed"]
+
+
+@pytest.mark.parametrize("value, spoken_value", [(-3, "negative 3"), (2.5, "2.5"), (1, "1")])
+def test_negative_decimal_and_one_coefficients_of_a_power(value, spoken_value):
+    root = build(powered(value), N(0, 12))
+    coef = by_role(root, "coefficient")[0]
+    assert coef["spoken_quick"] == f"Coefficient {spoken_value}"
+    assert coef["spoken_detailed"].startswith(f"{spoken_value[0].upper() + spoken_value[1:]} is the coefficient of x to the power of 2.")
+
+
+def test_number_times_group_holding_a_power_stays_a_group_multiplier():
+    # 3(x^2 + 2) = 12
+    inner = op("Add", [Pw(X(2), N(2, 4), 2, 5), N(2, 8)], 2, 9)
+    root = build(op("Mul", [N(3), G(inner, 1, 10)], 0, 10), N(12, 13))
+    three, group = root["children"][0]["children"]
+    assert (three["role"], group["role"]) == ("group_multiplier", "group")
+    assert by_role(root, "coefficient") == []
+    assert "It is not a coefficient, because it multiplies a group" in three["spoken_detailed"]
+    power = find(root, "Pow")[0]
+    assert power["children"][1]["role"] == "exponent"
+    assert "coefficient" not in spoken(power)
+
+
+@pytest.mark.parametrize("build_other", [
+    # 3(x+1)^2 : the power's base is a group
+    lambda: Pw(G(op("Add", [X(2), N(1, 6)], 2, 7), 1, 8), N(2, 9), 1, 10),
+    # 3 * 2^2 : the power's base is a number
+    lambda: Pw(N(2, 1), N(2, 3), 1, 4),
+    # 3(-x)^2 : negated variable is not a variable
+    lambda: Pw(op("Neg", [X(2)], 1, 3), N(2, 5), 1, 6),
+])
+def test_other_powers_do_not_make_a_coefficient(build_other):
+    root = build(op("Mul", [N(3), build_other()], 0, 10), N(0, 14))
+    three = root["children"][0]["children"][0]
+    assert three["role"] == "number"
+    assert by_role(root, "coefficient") == []
+
+
+def test_variable_times_powered_variable_has_no_coefficient():
+    root = build(op("Mul", [X(), Pw(X(2), N(2, 4), 2, 5)], 0, 5), N(0, 9))
+    assert by_role(root, "coefficient") == []
+    assert root["children"][0]["children"][0]["role"] == "variable"
+
+
+def test_powered_variable_inside_a_larger_product():
+    # 2 * 3x^2 : only the 3 multiplies the powered variable
+    inner = powered(3, 2, 2)
+    root = build(op("Mul", [N(2), inner], 0, 8), N(0, 12))
+    two, product = root["children"][0]["children"]
+    three, power = product["children"]
+    assert (two["role"], three["role"]) == ("number", "coefficient")
+    assert [n["value"] for n in by_role(root, "coefficient")] == [3]
+    assert "multiplied by the term 3 times x to the power of 2" in two["spoken_context"]
+    assert "coefficient of x to the power of 2" in three["spoken_detailed"]
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_powered_coefficient_on_either_side(side):
+    term = op("Add", [powered(3, 2), N(1, 8)], 0, 9)
+    root = build(term, N(5, 12)) if side == "left" else build(N(5, 0), term)
+    coef = by_role(root, "coefficient")[0]
+    assert coef["id"] == ("n0.0.0.0" if side == "left" else "n0.1.0.0")
+    mul = root["children"][0 if side == "left" else 1]["children"][0]
+    assert f"It is part of the {side} side of the equation." in mul["spoken_context"]
+    assert "added to the constant 1" in mul["spoken_context"]
+    assert "3 times x to the power of 2, plus 1" in root["spoken_detailed"]
+
+
+def test_powered_coefficients_in_nested_groups():
+    # 2(3(5x^2 + 1) + 4) = 20 : multipliers 2 and 3, coefficient 5
+    five = powered(5, 2, 5)
+    innermost = G(op("Add", [five, N(1, 12)], 5, 13), 4, 14)
+    middle = G(op("Add", [op("Mul", [N(3, 3), innermost], 3, 14), N(4, 17)], 3, 18), 2, 19)
+    root = build(op("Mul", [N(2, 0), middle], 0, 19), N(20, 22))
+    assert [n["value"] for n in by_role(root, "group_multiplier")] == [2, 3]
+    coef = by_role(root, "coefficient")
+    assert [n["value"] for n in coef] == [5]
+    assert "coefficient of x to the power of 2" in coef[0]["spoken_detailed"]
+    assert len(find(root, "Group")) == 2
+    ast = eq(op("Mul", [N(2, 0), middle], 0, 19), N(20, 22))
+    check_against_ast(ast, root)
+    check_roles(root)
+
+
+def test_powered_coefficient_fixture_term_is_called_a_term():
+    root = build_explorer_tree(REVIEW_FIXTURES["3x^2-2x+1=-(x-4)"][1])
+    assert root["children"][0]["children"][0]["children"][0]["children"][0]["role"] == "coefficient"
+    sub = root["children"][0]["children"][0]
+    assert "takes the term 2x away from the term 3 times x to the power of 2" in sub["spoken_detailed"]
+
+
+# ---- 10.2 spoken group boundaries ----------------------------------------------------
+
+
+def reading(left, right=None):
+    return build(left, right or N(0, 40))["spoken_detailed"]
+
+
+def open_close_counts(text):
+    return len(re.findall(r"\bthe group\b", text)), len(re.findall(r"\bend group\b", text))
+
+
+def properly_nested(text):
+    depth = 0
+    for token in re.findall(r"\bthe group\b|\bend group\b", text):
+        depth += 1 if token == "the group" else -1
+        if depth < 0:
+            return False
+    return depth == 0
+
+
+def test_one_group_is_opened_and_closed_aloud():
+    assert reading(two_times_group(), N(12, 12)) == (
+        "The whole equation. It says that the left side, 2 times the group x plus 3 "
+        "end group, has the same value as the right side, 12."
+    )
+
+
+def test_a_group_that_is_a_whole_side_is_closed_aloud():
+    root = build(G(x_plus_3(), 0, 7), N(5, 10))
+    assert "the left side, the group x plus 3 end group, has" in root["spoken_detailed"]
+    assert "It reads the group x plus 3 end group." in root["children"][0]["spoken_detailed"]
+
+
+def test_two_nested_groups_close_in_the_right_order():
+    inner = G(op("Add", [X(2), N(1, 6)], 2, 7), 1, 8)
+    outer = G(op("Mul", [N(3, 1), inner], 1, 8), 0, 9)
+    text = reading(outer)
+    assert "the group 3 times the group x plus 1 end group end group" in text
+    assert open_close_counts(text) == (2, 2) and properly_nested(text)
+
+
+def test_adjacent_groups_each_close_before_the_next_opens():
+    g1 = G(op("Add", [X(1), N(1, 5)], 1, 6), 0, 7)
+    g2 = G(op("Sub", [X(9), N(2, 13)], 9, 14), 8, 15)
+    text = reading(op("Mul", [g1, g2], 0, 15))
+    assert "the group x plus 1 end group times the group x minus 2 end group," in text
+    assert open_close_counts(text) == (2, 2) and properly_nested(text)
+    assert tree("(x+1)(x-2)=0")["spoken_detailed"].count("end group") == 2
+
+
+def test_group_inside_a_power_and_group_as_the_exponent():
+    text = tree("(x+1)^2=9")["spoken_detailed"]
+    assert "the group x plus 1 end group to the power of 2," in text
+    # 2^(x + 1): the exponent group closes at the end of the power
+    exp_group = G(op("Add", [X(3), N(1, 7)], 3, 8), 2, 9)
+    text = reading(Pw(N(2), exp_group, 0, 9), N(8, 12))
+    assert "2 to the power of the group x plus 1 end group," in text
+
+
+def test_group_inside_a_fraction():
+    g = G(op("Add", [X(1), N(1, 5)], 1, 6), 0, 7)
+    text = reading(Fr(g, N(2, 9), 0, 10), N(3, 14))
+    assert "the fraction with numerator the group x plus 1 end group and denominator 2" in text
+    g2 = G(op("Sub", [X(9), N(2, 13)], 9, 14), 8, 15)
+    text = reading(Fr(N(1, 0), g2, 0, 15), N(3, 20))
+    assert "numerator 1 and denominator the group x minus 2 end group," in text
+    assert open_close_counts(text) == (1, 1)
+
+
+def _closes_inside_versus_before():
+    inner = G(op("Add", [X(), N(1)], 0, 3), 0, 4)
+    three_times = op("Mul", [N(3), inner], 0, 4)
+    inside = op("Mul", [N(2), G(op("Add", [three_times, N(4)], 0, 5), 0, 6)], 0, 7)  # 2(3(x+1)+4)
+    before = op("Add", [op("Mul", [N(2), G(three_times, 0, 5)], 0, 6), N(4)], 0, 8)  # 2(3(x+1))+4
+    return inside, before
+
+
+def test_nested_group_endings_are_distinguishable_in_the_whole_equation_reading():
+    inside, before = _closes_inside_versus_before()
+    first, second = reading(inside, N(20)), reading(before, N(20))
+    assert first != second
+    assert "2 times the group 3 times the group x plus 1 end group plus 4 end group," in first
+    assert "2 times the group 3 times the group x plus 1 end group end group plus 4," in second
+
+
+def test_group_ending_inside_or_before_a_product_is_distinguishable():
+    inside = G(op("Add", [N(2), op("Mul", [G(X()), N(2)], 0, 3)], 0, 4), 0, 5)  # (2 + (x)2)
+    before = op("Mul", [G(op("Add", [N(2), G(X())], 0, 4), 0, 5), N(2)], 0, 6)  # (2 + (x))2
+    first, second = reading(inside, N(1)), reading(before, N(1))
+    assert first != second
+    assert "the group 2 plus the group x end group times 2 end group," in first
+    assert "the group 2 plus the group x end group end group times 2," in second
+
+
+def test_boundary_words_are_in_the_whole_reading_not_in_single_part_texts():
+    root = tree("2(3(x+1)+4)=20")
+    assert "end group" in root["spoken_detailed"]
+    assert "end group" in root["children"][0]["spoken_detailed"]  # "It reads ..."
+    for node in flat(root):
+        for key in ("spoken_quick", "spoken_context"):
+            assert "end group" not in node[key], (node["id"], key)
+        if node["role"] not in ("equation", "left_side", "right_side"):
+            assert "end group" not in node["spoken_detailed"], node["id"]
+
+
+def test_quick_text_is_unchanged_and_short_for_groups():
+    for name in ("2(x+3)=12", "(x+1)(x-2)=0", "2(3(x+1)+4)=20", "(x+1)^2=9"):
+        for n in flat(tree(name)):
+            assert len(n["spoken_quick"].split()) <= 4
+            assert "end" not in n["spoken_quick"]
+
+
+def test_boundaries_do_not_change_ids_spans_or_structure():
+    for name, (source, ast) in ALL_FIXTURES.items():
+        before = copy.deepcopy(ast)
+        root = build_explorer_tree(ast)
+        assert ast == before
+        check_against_ast(ast, root)
+
+
+@pytest.mark.parametrize("seed", range(150))
+def test_random_readings_have_balanced_boundaries(seed):
+    ast = random_equation(seed)
+    root = build_explorer_tree(ast)
+    groups = sum(1 for n in flat_ast(ast) if n["type"] == "Group")
+    opened, closed = open_close_counts(root["spoken_detailed"])
+    assert opened == closed == groups
+    assert properly_nested(root["spoken_detailed"])
+    for side in root["children"]:
+        reads = re.search(r"It reads (.*?)\. [A-Z]", side["spoken_detailed"] + ". X")
+        if reads and not side["type"] in ("Number", "Variable"):
+            assert properly_nested(reads.group(1))
+
+
+def _erase_groups(node):
+    if node["type"] == "Group":
+        return _erase_groups(node["children"][0])
+    return (node["type"], node.get("value"), tuple(_erase_groups(c) for c in node["children"]))
+
+
+def _small_trees(size, kinds):
+    """Every tree with `size` nodes over the given node kinds; leaves x and 2."""
+    if size == 1:
+        return [
+            {"type": "Variable", "value": "x", "children": [], "span": [0, 1]},
+            {"type": "Number", "value": 2, "children": [], "span": [0, 1]},
+        ]
+    out = []
+    for kind in kinds:
+        if kind in ("Group", "Neg"):
+            for sub in _small_trees(size - 1, kinds):
+                out.append({"type": kind, "children": [sub], "span": [0, 1]})
+        else:
+            for k in range(1, size - 1):
+                for left in _small_trees(k, kinds):
+                    for right in _small_trees(size - 1 - k, kinds):
+                        out.append({"type": kind, "children": [left, right], "span": [0, 1]})
+    return out
+
+
+@pytest.mark.parametrize("kinds", [
+    ("Add", "Sub", "Mul", "Pow", "Group"),
+    ("Add", "Sub", "Mul", "Div", "Pow", "Neg", "Fraction", "Group"),
+])
+def test_trees_that_differ_only_in_group_boundaries_are_read_differently(kinds):
+    """Exhaustive: for every tree up to 7 nodes, two trees that are the same once
+    the groups are removed but have their groups in different places must give
+    different whole-equation readings."""
+    seen = {}
+    for size in range(1, 8):
+        for tree_ in _small_trees(size, kinds):
+            ast = {"type": "Equation", "span": [0, 5], "children": [
+                tree_, {"type": "Number", "value": 0, "children": [], "span": [0, 1]}]}
+            text = build_explorer_tree(ast)["spoken_detailed"]
+            key = (_erase_groups(tree_), text)
+            shape_ = repr(tree_)
+            assert seen.setdefault(key, shape_) == shape_, (text, seen[key], shape_)
+
+
+# ---- 10.3 capitalisation and repeated long bases --------------------------------------------------
+
+
+def _sentence_starts(text):
+    """The first word of every sentence (split on '. ')."""
+    return [s.strip().split(" ")[0] for s in re.split(r"(?<=\.) ", text) if s.strip()]
+
+
+@pytest.mark.parametrize("name", ALL_FIXTURES)
+def test_no_sentence_starts_with_a_lower_case_word(name):
+    for node in flat(build_explorer_tree(ALL_FIXTURES[name][1])):
+        for key in SPOKEN_KEYS:
+            for first in _sentence_starts(node[key]):
+                # a lone letter is a variable name (x), written in lower case
+                assert len(first) == 1 or not first[0].islower(), (node["id"], key, first)
+
+
+def test_capitalised_starts_for_groups_and_negative_numbers():
+    pow_node = tree("(x+1)^2=9")["children"][0]
+    assert "The group x plus 1 squared means the group x plus 1 is multiplied by itself" in (
+        pow_node["spoken_detailed"]
+    )
+    neg_base = build(Pw(N(-2), N(2, 4), 0, 5), N(4, 8))["children"][0]
+    assert "The quantity negative 2 squared means" in neg_base["spoken_detailed"]
+    assert neg_base["children"][0]["spoken_detailed"].startswith("Negative 2 is the base of the power.")
+    # a variable base stays in lower case
+    assert "x squared means x is multiplied by itself" in tree("x^2+3=7")["children"][0]["children"][0]["spoken_detailed"]
+
+
+def test_long_base_is_named_once_then_called_the_base():
+    root = build_explorer_tree(REVIEW_FIXTURES["((x+1)(x-2)+3)^2=16"][1])
+    power = root["children"][0]
+    detail = power["spoken_detailed"]
+    base = "the group the group x plus 1, times the group x minus 2, plus 3"
+    assert detail.count(base) == 1  # spelled out once, in "The base is ..."
+    assert "The base squared means the base is multiplied by itself: the base times the base." in detail
+    exponent = power["children"][1]
+    assert exponent["spoken_detailed"].startswith("2 is the exponent. It indicates that the base is multiplied by itself.")
+    assert exponent["spoken_context"].count(base) == 2  # context is read alone: unchanged
+
+
+def test_short_bases_are_still_spelled_out():
+    cubed = build(Pw(G(x_plus_3(), 0, 7), N(3, 8), 0, 9), N(8, 12))["children"][0]["spoken_detailed"]
+    assert "The group x plus 3 cubed means the group x plus 3 is used as a factor three times: " in cubed
+    higher = build(Pw(G(x_plus_3(), 0, 7), N(5, 8), 0, 9), N(8, 12))["children"][0]["spoken_detailed"]
+    assert "It means the group x plus 3 is used as a factor 5 times." in higher
+
+
+def test_long_base_with_another_exponent_uses_the_base_too():
+    base = G(op("Add", [op("Mul", [N(2), G(x_plus_3(), 1, 8)], 0, 9), N(5, 12)], 0, 13), 0, 14)
+    root = build(Pw(base, N(5, 15), 0, 16), N(8, 20))
+    detail = root["children"][0]["spoken_detailed"]
+    assert "It means the base is used as a factor 5 times." in detail

@@ -56,6 +56,7 @@ the side role wins for the top node of a side (docs/keyboard_guide.md A2).
 
 from __future__ import annotations
 
+import math
 from typing import Any, NamedTuple, Optional
 
 __all__ = ["ExplorerError", "build_explorer_tree"]
@@ -68,6 +69,12 @@ class ExplorerError(ValueError):
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
+# Deepest tree accepted, counting the Equation as level 1. Must equal MAX_DEPTH in
+# static/explorer_keys.js (a test keeps the two in step): a deeper tree would be
+# built here and then rejected by the keyboard module. It also bounds recursion,
+# so a hostile or cyclic AST raises ExplorerError instead of RecursionError.
+MAX_DEPTH = 100
 
 EQUATION = "Equation"
 NUMBER = "Number"
@@ -147,6 +154,8 @@ def _read_node(node: Any, path: str) -> _Ast:
     if node_type == NUMBER:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ExplorerError(f"{path}: Number needs a numeric 'value'")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ExplorerError(f"{path}: Number 'value' must be finite")
     elif node_type == VARIABLE:
         if not isinstance(value, str) or not value:
             raise ExplorerError(f"{path}: Variable needs a 'value' such as 'x'")
@@ -202,6 +211,20 @@ def _child_ctx(node: _Ast, siblings: tuple, index: int, ctx: _Ctx) -> _Ctx:
 # ---------------------------------------------------------------------------
 
 
+def _is_powered_variable(node: Any) -> bool:
+    """A Pow whose base is a Variable (x^2, x^3). A number multiplying one is
+    its coefficient: in 3x^2 the exponent applies to x alone, so 3 multiplies
+    the power. Pow of anything else (a group, a number) does not qualify."""
+    if isinstance(node, _Ast):
+        node_type, kids = node.type, node.children
+    else:
+        node_type, kids = node.get("type"), node.get("children")
+    if node_type != "Pow" or not isinstance(kids, list) or not kids:
+        return False
+    base = kids[0]
+    return isinstance(base, dict) and base.get("type") == VARIABLE
+
+
 def _determine_role(node: _Ast, ctx: _Ctx) -> str:
     if node.type == EQUATION:
         return ROLE_EQUATION
@@ -225,7 +248,7 @@ def _determine_role(node: _Ast, ctx: _Ctx) -> str:
         return ROLE_NUMERATOR if ctx.index == 0 else ROLE_DENOMINATOR
     if parent is not None and parent.type == "Mul":
         others = [s for i, s in enumerate(ctx.siblings) if i != ctx.index]
-        if any(s.type == VARIABLE for s in others):
+        if any(s.type == VARIABLE or _is_powered_variable(s) for s in others):
             return ROLE_COEFFICIENT
         if any(s.type == GROUP for s in others):
             return ROLE_GROUP_MULTIPLIER
@@ -282,12 +305,23 @@ def _cap(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+def _start(text: str) -> str:
+    """Capitalise a phrase that begins a sentence ("the group x plus 1 ...",
+    "negative 2 ..."). A lone variable name such as "x" is left in lower case,
+    the usual way of writing it."""
+    first = text.split(" ", 1)[0]
+    return _cap(text) if len(first) > 1 else text
+
+
 def _is_number_times_variable(d: dict) -> bool:
-    """Mul of a number and a variable in either order, e.g. 3x or x*3."""
+    """Mul of a number and a variable, or of a number and a powered variable, in
+    either order: 3x, x*3, 3x^2. These are single terms."""
     if d["type"] != "Mul":
         return False
     kinds = sorted(c["type"] for c in d["children"])
-    return kinds == [NUMBER, VARIABLE]
+    return kinds == [NUMBER, VARIABLE] or (
+        kinds == [NUMBER, "Pow"] and any(_is_powered_variable(c) for c in d["children"])
+    )
 
 
 def _needs_group(child: dict, parent_type: str, index: int) -> bool:
@@ -308,42 +342,58 @@ def _needs_group(child: dict, parent_type: str, index: int) -> bool:
     return False
 
 
-def _child_phrase(parent: dict, index: int) -> str:
+def _child_phrase(parent: dict, index: int, mark: bool = False) -> str:
     """Words for one child, marked as 'the quantity ...' when grouping matters."""
-    text = _phrase(parent["children"][index])
+    text = _phrase(parent["children"][index], mark)
     if _needs_group(parent["children"][index], parent["type"], index):
         return f"the quantity {text}"
     return text
 
 
-def _ends_open(d: dict) -> bool:
+# Spoken group boundaries
+# -----------------------
+# Reading a whole expression aloud has no brackets, so "the group ..." says where
+# a group opens but nothing said where it closed: 2(3(x+1)+4) and 2(3(x+1))+4 were
+# read identically. With mark=True a group is closed aloud with "end group", and
+# that is used only for whole-expression readings (the Equation's text and the
+# "It reads ..." sentence of a side). Everything that explains one part keeps the
+# shorter unmarked wording, so the C/I texts of single nodes do not get longer.
+END_GROUP = "end group"
+
+
+def _ends_open(d: dict, mark: bool = False) -> bool:
     """Does the spoken form of `d` end with a group, fraction or power, so that
-    whatever is read next could be mistaken for part of it?"""
+    whatever is read next could be mistaken for part of it? With mark=True a
+    group is closed aloud, so it no longer ends open."""
     t = d["type"]
-    if t in (GROUP, FRACTION, "Pow"):
+    if t == GROUP:
+        return not mark
+    if t in (FRACTION, "Pow"):
         return True
     if t in _LEAVES:
         return False
-    return _ends_open(d["children"][-1])
+    return _ends_open(d["children"][-1], mark)
 
 
-def _phrase(d: dict) -> str:
-    """Spoken form of a whole sub-expression, e.g. '3x plus 5'."""
+def _phrase(d: dict, mark: bool = False) -> str:
+    """Spoken form of a whole sub-expression, e.g. '3x plus 5'. With mark=True
+    every group is closed aloud (see END_GROUP)."""
     t = d["type"]
     if t in _LEAVES:
         return _say(t, d["value"])
     if t == GROUP:
-        return f"the group {_phrase(d['children'][0])}"
+        inner = _phrase(d["children"][0], mark)
+        return f"the group {inner} {END_GROUP}" if mark else f"the group {inner}"
     if t == FRACTION:
         num, den = d["children"]
         # a comma keeps "and denominator" from being read as part of the numerator
-        sep = "," if _ends_open(num) else ""
+        sep = "," if _ends_open(num, mark) else ""
         return (
-            f"the fraction with numerator {_phrase(num)}{sep} "
-            f"and denominator {_phrase(den)}"
+            f"the fraction with numerator {_phrase(num, mark)}{sep} "
+            f"and denominator {_phrase(den, mark)}"
         )
     if t == "Neg":
-        return f"negative {_child_phrase(d, 0)}"
+        return f"negative {_child_phrase(d, 0, mark)}"
     if t == "Mul":
         first, second = d["children"]
         if first["type"] == NUMBER and second["type"] == VARIABLE:
@@ -355,13 +405,15 @@ def _phrase(d: dict) -> str:
         "Div": "divided by",
         "Pow": "to the power of",
     }[t]
-    left = _child_phrase(d, 0)
+    left = _child_phrase(d, 0, mark)
     first = d["children"][0]
-    if _ends_open(first) and (t != "Pow" or first["type"] in (GROUP, FRACTION)):
+    if _ends_open(first, mark) and (
+        t != "Pow" or first["type"] == FRACTION or (first["type"] == GROUP and not mark)
+    ):
         # "x to the power of 2, plus 3" / "the group x plus 3, times 2": the
         # pause stops what follows sounding like part of the first operand.
         left += ","
-    return f"{left} {joiner} {_child_phrase(d, 1)}"
+    return f"{left} {joiner} {_child_phrase(d, 1, mark)}"
 
 
 def _label(d: dict) -> str:
@@ -451,6 +503,10 @@ def _operation_sentence(node: dict) -> str:
         if kids[0]["type"] == NUMBER and kids[1]["type"] == VARIABLE:
             n = _say(NUMBER, kids[0]["value"])
             return f"{text} So {_phrase(node)} means {n} times {kids[1]['value']}."
+        for num, powered in ((0, 1), (1, 0)):
+            if kids[num]["type"] == NUMBER and _is_powered_variable(kids[powered]):
+                n = _say(NUMBER, kids[num]["value"])
+                return f"{text} The power is worked out first, then multiplied by {n}."
         for g, other in ((1, 0), (0, 1)):
             if kids[g]["type"] == GROUP and kids[other]["type"] == NUMBER:
                 m = _say(NUMBER, kids[other]["value"])
@@ -473,18 +529,35 @@ def _group_sentence(node: dict) -> str:
     )
 
 
+LONG_BASE_WORDS = 6
+
+
+def _base_ref(b: str) -> str:
+    """How later sentences refer to the base of a power. The base is spelled out
+    once ("The base is ... and the exponent is ..."); after that a long base is
+    called "the base" instead of being read again and again."""
+    return "the base" if len(b.split()) > LONG_BASE_WORDS else b
+
+
 def _power_sentence(node: dict) -> str:
     base, exp = node["children"]
     b = _child_phrase(node, 0)
     e = _child_phrase(node, 1)
     head = f"Power. The base is {b} and the exponent is {e}."
-    if exp["type"] == NUMBER and float(exp["value"]).is_integer():
-        n = int(exp["value"])
+    b = _base_ref(b)
+    value = exp.get("value")
+    if exp["type"] == NUMBER and (
+        isinstance(value, int) or (isinstance(value, float) and value.is_integer())
+    ):
+        n = int(value)  # not float(value): a huge int would overflow
         if n == 2:
-            return f"{head} {b} squared means {b} is multiplied by itself: {b} times {b}."
+            return (
+                f"{head} {_start(b)} squared means {b} is multiplied by itself: "
+                f"{b} times {b}."
+            )
         if n == 3:
             return (
-                f"{head} {b} cubed means {b} is used as a factor three times: "
+                f"{head} {_start(b)} cubed means {b} is used as a factor three times: "
                 f"{b} times {b} times {b}."
             )
         if n > 3:
@@ -573,18 +646,18 @@ def _position_number_detailed(node: dict, parent: Optional[dict]) -> str:
     if role == ROLE_GROUP_MULTIPLIER:
         group = next(k for k in kids if k["type"] == GROUP)
         return (
-            f"{n} is the multiplier of {_phrase(group)}. It multiplies the "
+            f"{_cap(n)} is the multiplier of {_phrase(group)}. It multiplies the "
             f"{_entire(group)}, so every part inside the brackets is multiplied by "
             f"{n}. It is not a coefficient, because it multiplies a group and "
             "not the variable."
         )
     if role == ROLE_BASE:
         return (
-            f"{n} is the base of the power. It is the number that is multiplied "
+            f"{_cap(n)} is the base of the power. It is the number that is multiplied "
             f"by itself, and the exponent {_child_phrase(parent, 1)} says how many times."
         )
     if role == ROLE_EXPONENT:
-        b = _child_phrase(parent, 0)
+        b = _base_ref(_child_phrase(parent, 0))
         exp = node["value"]
         if isinstance(exp, float) and exp.is_integer():
             exp = int(exp)
@@ -595,17 +668,17 @@ def _position_number_detailed(node: dict, parent: Optional[dict]) -> str:
         else:
             meaning = f"It is the power that {b} is raised to."
         return (
-            f"{n} is the exponent. {meaning} It is not a constant term or a "
+            f"{_cap(n)} is the exponent. {meaning} It is not a constant term or a "
             "coefficient: it is not added to anything and does not multiply anything. "
             "It only says how many times the base is multiplied."
         )
     if role == ROLE_NUMERATOR:
         return (
-            f"{n} is the numerator of the fraction: the top part, which is divided by "
+            f"{_cap(n)} is the numerator of the fraction: the top part, which is divided by "
             f"the denominator {_phrase(kids[1])}."
         )
     return (
-        f"{n} is the denominator of the fraction: the bottom part, which the "
+        f"{_cap(n)} is the denominator of the fraction: the bottom part, which the "
         f"numerator {_phrase(kids[0])} is divided by. A denominator cannot "
         "be zero."
     )
@@ -617,13 +690,14 @@ def _spoken_detailed(node: dict, index: int, parent: Optional[dict]) -> str:
         left, right = node["children"]
         return (
             "The whole equation. It says that the left side, "
-            f"{_phrase(left)}, has the same value as the right side, {_phrase(right)}."
+            f"{_phrase(left, True)}, has the same value as the right side, "
+            f"{_phrase(right, True)}."
         )
     if role in (ROLE_LEFT, ROLE_RIGHT):
         side, where = ("left", "before") if role == ROLE_LEFT else ("right", "after")
         base = f"The {side} side of the equation, everything {where} the equals sign."
         if t in _OPERATORS or t in (GROUP, FRACTION):
-            return f"{base} It reads {_phrase(node)}. {_operation_sentence(node)}"
+            return f"{base} It reads {_phrase(node, True)}. {_operation_sentence(node)}"
         return f"{base} It is just {_label(node)}."
     if role in (ROLE_OPERATOR, ROLE_POWER, ROLE_GROUP, ROLE_FRACTION):
         return _operation_sentence(node) + _where_it_sits(node, index, parent)
@@ -631,11 +705,19 @@ def _spoken_detailed(node: dict, index: int, parent: Optional[dict]) -> str:
     sibling = _other_child(parent, index) if parent is not None else None
     if role in _POSITION_NUMBER_ROLES:
         return _position_number_detailed(node, parent)
+    if role == ROLE_COEFFICIENT and sibling is not None and sibling["type"] == "Pow":
+        n = _say(NUMBER, node["value"])
+        powered = _phrase(sibling)
+        return (
+            f"{_cap(n)} is the coefficient of {powered}. It tells you {powered} is "
+            f"multiplied by {n}, so the term means {n} times {powered}. The exponent "
+            f"belongs to {_phrase(sibling['children'][0])} alone, not to {n}."
+        )
     if role == ROLE_COEFFICIENT:
         n = _say(NUMBER, node["value"])
         v = sibling["value"] if sibling else "x"
         return (
-            f"{n} is the coefficient of {v}. It tells you {v} is multiplied by {n}, "
+            f"{_cap(n)} is the coefficient of {v}. It tells you {v} is multiplied by {n}, "
             f"so the term means {n} times {v}."
         )
     if role == ROLE_VARIABLE:
@@ -645,14 +727,14 @@ def _spoken_detailed(node: dict, index: int, parent: Optional[dict]) -> str:
         return text + _where_it_sits(node, index, parent)
     n = _say(NUMBER, node["value"])
     if role == ROLE_CONSTANT:
-        text = f"{n} is a constant term: a plain number that does not multiply x."
+        text = f"{_cap(n)} is a constant term: a plain number that does not multiply x."
         if parent is not None and parent["type"] != "Neg":
             text += f" It {_placement(node, parent, index)}."
         elif parent is not None:
             text += " The negation changes its sign."
         return text
     return (
-        f"{n} is a plain number here. It is not a coefficient, because it does not "
+        f"{_cap(n)} is a plain number here. It is not a coefficient, because it does not "
         "multiply x, and not a constant term, because it is not added or subtracted."
     )
 
@@ -720,6 +802,12 @@ def _spoken_context(node: dict, index: int, trail: list) -> str:
             f"{_cap(_label(node))} {_placement(node, parent, index)}. "
             f"It is treated as one quantity. {region}"
         )
+    if role == ROLE_COEFFICIENT and sibling["type"] == "Pow":
+        n, powered = _say(NUMBER, node["value"]), _phrase(sibling)
+        return (
+            f"The coefficient {n} belongs to {powered}: it is multiplied by {n}. "
+            f"Together they form the term {_phrase(parent)}."
+        )
     if role == ROLE_COEFFICIENT:
         n, v = _say(NUMBER, node["value"]), sibling["value"]
         return (
@@ -749,12 +837,14 @@ def _annotate(node: dict, index: int, trail: list) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _convert(node: _Ast, path: str, node_id: str, ctx: _Ctx) -> dict:
+def _convert(node: _Ast, path: str, node_id: str, ctx: _Ctx, depth: int = 1) -> dict:
     """Convert an already-validated node (and, recursively, its children).
 
     spoken_detailed / spoken_context are placeholders here; `_annotate` fills
     them once the whole tree exists.
     """
+    if depth > MAX_DEPTH:
+        raise ExplorerError(f"{path}: the tree is more than {MAX_DEPTH} levels deep")
     if ctx.parent is None and node.type != EQUATION:
         raise ExplorerError(f"{path}: the root must be an Equation, got {node.type}")
     if ctx.parent is not None and node.type == EQUATION:
@@ -767,7 +857,7 @@ def _convert(node: _Ast, path: str, node_id: str, ctx: _Ctx) -> dict:
         _read_node(c, f"{path}.children[{i}]") for i, c in enumerate(node.children)
     )
     children = [
-        _convert(kid, f"{path}.children[{i}]", _make_id(node_id, i), _child_ctx(node, kids, i, ctx))
+        _convert(kid, f"{path}.children[{i}]", _make_id(node_id, i), _child_ctx(node, kids, i, ctx), depth + 1)
         for i, kid in enumerate(kids)
     ]
 

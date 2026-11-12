@@ -26,7 +26,7 @@ Related: `docs/keyboard_guide.md` (what the keys should do), plan.md §6 (journe
 | Suite | Command | Result |
 |---|---|---|
 | Keyboard logic and DOM adapter (fake DOM) | `node --test tests/js/` | 82 passed, 0 failed (includes regression tests for every review fix) |
-| Explorer + fixture drift guard | `pytest` | 329 passed (the 328 existing explorer tests plus 1 guard that keeps `tests/js/explorer_trees.json` in step with `engine/explore.py`) |
+| Explorer + fixture drift guard | `pytest` | 1213 passed, 0 failed, 0 xfailed. Includes the Phase 3 review tests and the refinement tests (powered coefficients, spoken group boundaries, capitalisation, long bases), and the drift guard for `tests/js/explorer_trees.json` |
 
 The JS tests run against a hand-written fake DOM, not a browser. The fake fires events the way the DOM does (bubbling, no `focusin` when already focused), but it cannot show real focus, scrolling, live-region or `speechSynthesis` behaviour. They prove the logic and the attributes set. They do not prove how a browser or screen reader behaves.
 

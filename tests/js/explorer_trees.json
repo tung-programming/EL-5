@@ -207,7 +207,7 @@
   "role": "equation",
   "value": null,
   "spoken_quick": "Equation",
-  "spoken_detailed": "The whole equation. It says that the left side, 2 times the group x plus 3, has the same value as the right side, 12.",
+  "spoken_detailed": "The whole equation. It says that the left side, 2 times the group x plus 3 end group, has the same value as the right side, 12.",
   "spoken_context": "This is the whole equation.",
   "span": [
    0,
@@ -220,7 +220,7 @@
     "role": "left_side",
     "value": null,
     "spoken_quick": "Left side",
-    "spoken_detailed": "The left side of the equation, everything before the equals sign. It reads 2 times the group x plus 3. Multiplication. It combines the multiplier 2 and the group x plus 3 by multiplying them. So 2 multiplies the entire group x plus 3.",
+    "spoken_detailed": "The left side of the equation, everything before the equals sign. It reads 2 times the group x plus 3 end group. Multiplication. It combines the multiplier 2 and the group x plus 3 by multiplying them. So 2 multiplies the entire group x plus 3.",
     "spoken_context": "The multiplication expression 2 times the group x plus 3 forms the left side of the equation. The right side is 12.",
     "span": [
      0,

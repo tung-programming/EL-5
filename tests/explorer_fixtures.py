@@ -284,6 +284,250 @@ AST_GROUPED_FRACTION_SQUARED = _node(
     11,
 )
 
+# ---------------------------------------------------------------------------
+# Review fixtures: structures combined, repeated or nested. Same provisional
+# conventions as above (spans are [start, end) in the source string; a
+# Fraction whose numerator/denominator was typed in brackets spans the brackets
+# while its operand's own span does not).
+# ---------------------------------------------------------------------------
+
+# "2(x + 3)^2 - (x - 1)/4 = 5"     multiplier, group inside a power, fraction of a difference
+#  0123456789ABCDEF0123456789   (indexes continue 10..25)
+SRC_MULTIPLIED_SQUARED_GROUP_MINUS_FRACTION = "2(x + 3)^2 - (x - 1)/4 = 5"
+AST_MULTIPLIED_SQUARED_GROUP_MINUS_FRACTION = _node(
+    "Equation",
+    [
+        _node(
+            "Sub",
+            [
+                _node(
+                    "Mul",
+                    [
+                        _num(2, 0, 1),
+                        _node(
+                            "Pow",
+                            [
+                                _node("Group", [_node("Add", [_var(2, 3), _num(3, 6, 7)], 2, 7)], 1, 8),
+                                _num(2, 9, 10),
+                            ],
+                            1,
+                            10,
+                        ),
+                    ],
+                    0,
+                    10,
+                ),
+                _node(
+                    "Fraction",
+                    [_node("Sub", [_var(14, 15), _num(1, 18, 19)], 14, 19), _num(4, 21, 22)],
+                    13,
+                    22,
+                ),
+            ],
+            0,
+            22,
+        ),
+        _num(5, 25, 26),
+    ],
+    0,
+    26,
+)
+
+# "((x + 1)(x - 2) + 3)^2 = 16"     groups nested in a group, the group squared
+SRC_NESTED_PRODUCT_OF_GROUPS_SQUARED = "((x + 1)(x - 2) + 3)^2 = 16"
+AST_NESTED_PRODUCT_OF_GROUPS_SQUARED = _node(
+    "Equation",
+    [
+        _node(
+            "Pow",
+            [
+                _node(
+                    "Group",
+                    [
+                        _node(
+                            "Add",
+                            [
+                                _node(
+                                    "Mul",
+                                    [
+                                        _node("Group", [_node("Add", [_var(2, 3), _num(1, 6, 7)], 2, 7)], 1, 8),
+                                        _node("Group", [_node("Sub", [_var(9, 10), _num(2, 13, 14)], 9, 14)], 8, 15),
+                                    ],
+                                    1,
+                                    15,
+                                ),
+                                _num(3, 18, 19),
+                            ],
+                            1,
+                            19,
+                        )
+                    ],
+                    0,
+                    20,
+                ),
+                _num(2, 21, 22),
+            ],
+            0,
+            22,
+        ),
+        _num(16, 25, 27),
+    ],
+    0,
+    27,
+)
+
+# "3x^2 - 2x + 1 = -(x - 4)"     quadratic with a negated group on the right
+SRC_QUADRATIC_EQ_NEGATED_GROUP = "3x^2 - 2x + 1 = -(x - 4)"
+AST_QUADRATIC_EQ_NEGATED_GROUP = _node(
+    "Equation",
+    [
+        _node(
+            "Add",
+            [
+                _node(
+                    "Sub",
+                    [
+                        _node(
+                            "Mul",
+                            [_num(3, 0, 1), _node("Pow", [_var(1, 2), _num(2, 3, 4)], 1, 4)],
+                            0,
+                            4,
+                        ),
+                        _node("Mul", [_num(2, 7, 8), _var(8, 9)], 7, 9),
+                    ],
+                    0,
+                    9,
+                ),
+                _num(1, 12, 13),
+            ],
+            0,
+            13,
+        ),
+        _node(
+            "Neg",
+            [_node("Group", [_node("Sub", [_var(18, 19), _num(4, 22, 23)], 18, 23)], 17, 24)],
+            16,
+            24,
+        ),
+    ],
+    0,
+    24,
+)
+
+# "(2x + 1)/(x - 3) = 4"     fraction with a compound numerator and denominator
+SRC_FRACTION_OF_SUM_OVER_DIFFERENCE = "(2x + 1)/(x - 3) = 4"
+AST_FRACTION_OF_SUM_OVER_DIFFERENCE = _node(
+    "Equation",
+    [
+        _node(
+            "Fraction",
+            [
+                _node("Add", [_node("Mul", [_num(2, 1, 2), _var(2, 3)], 1, 3), _num(1, 6, 7)], 1, 7),
+                _node("Sub", [_var(10, 11), _num(3, 14, 15)], 10, 15),
+            ],
+            0,
+            16,
+        ),
+        _num(4, 19, 20),
+    ],
+    0,
+    20,
+)
+
+# "((x + 1)/2 + 3)/4 = 1"     fraction inside a sum inside a fraction
+SRC_NESTED_FRACTIONS = "((x + 1)/2 + 3)/4 = 1"
+AST_NESTED_FRACTIONS = _node(
+    "Equation",
+    [
+        _node(
+            "Fraction",
+            [
+                _node(
+                    "Add",
+                    [
+                        _node(
+                            "Fraction",
+                            [_node("Add", [_var(2, 3), _num(1, 6, 7)], 2, 7), _num(2, 9, 10)],
+                            1,
+                            10,
+                        ),
+                        _num(3, 13, 14),
+                    ],
+                    1,
+                    14,
+                ),
+                _num(4, 16, 17),
+            ],
+            0,
+            17,
+        ),
+        _num(1, 20, 21),
+    ],
+    0,
+    21,
+)
+
+# "2(x + 1) + 3(x - 1) = 10"     two group multipliers in one sum
+SRC_TWO_MULTIPLIED_GROUPS = "2(x + 1) + 3(x - 1) = 10"
+AST_TWO_MULTIPLIED_GROUPS = _node(
+    "Equation",
+    [
+        _node(
+            "Add",
+            [
+                _node(
+                    "Mul",
+                    [
+                        _num(2, 0, 1),
+                        _node("Group", [_node("Add", [_var(2, 3), _num(1, 6, 7)], 2, 7)], 1, 8),
+                    ],
+                    0,
+                    8,
+                ),
+                _node(
+                    "Mul",
+                    [
+                        _num(3, 11, 12),
+                        _node("Group", [_node("Sub", [_var(13, 14), _num(1, 17, 18)], 13, 18)], 12, 19),
+                    ],
+                    11,
+                    19,
+                ),
+            ],
+            0,
+            19,
+        ),
+        _num(10, 22, 24),
+    ],
+    0,
+    24,
+)
+
+# "(x^2 + 1)^3 = 8"     power inside a group inside a power
+SRC_POWER_IN_GROUP_IN_POWER = "(x^2 + 1)^3 = 8"
+AST_POWER_IN_GROUP_IN_POWER = _node(
+    "Equation",
+    [
+        _node(
+            "Pow",
+            [
+                _node(
+                    "Group",
+                    [_node("Add", [_node("Pow", [_var(1, 2), _num(2, 3, 4)], 1, 4), _num(1, 7, 8)], 1, 8)],
+                    0,
+                    9,
+                ),
+                _num(3, 10, 11),
+            ],
+            0,
+            11,
+        ),
+        _num(8, 14, 15),
+    ],
+    0,
+    15,
+)
+
 # Every fixture as (source, ast)
 FIXTURES = {
     "3x+5=14": (SRC_3X_PLUS_5_EQ_14, AST_3X_PLUS_5_EQ_14),
@@ -298,8 +542,32 @@ FIXTURES = {
     "(x/2)^2=9": (SRC_GROUPED_FRACTION_SQUARED, AST_GROUPED_FRACTION_SQUARED),
 }
 
-# Node types the fixtures use. Div and Neg are not used by any fixture (the
-# tests build those inline).
+# Node types the fixtures use. Div is not used by any fixture (the tests build
+# it inline); Neg appears only in the quadratic review fixture.
 FIXTURE_NODE_TYPES = {
-    "Number", "Variable", "Add", "Sub", "Mul", "Pow", "Group", "Fraction", "Equation",
+    "Number", "Variable", "Add", "Sub", "Mul", "Pow", "Group", "Fraction", "Neg",
+    "Equation",
 }
+
+# Review fixtures: kept apart from FIXTURES on purpose. Several older tests walk
+# FIXTURES along first children and forbid a repeated sentence, while the context
+# text of every node deliberately says on its own which side it is on (it is read
+# alone with the C key). These fixtures put a Mul below a Sub, so parent and
+# child both say "It is part of the left side of the equation."
+REVIEW_FIXTURES = {
+    "2(x+3)^2-(x-1)/4=5": (
+        SRC_MULTIPLIED_SQUARED_GROUP_MINUS_FRACTION,
+        AST_MULTIPLIED_SQUARED_GROUP_MINUS_FRACTION,
+    ),
+    "((x+1)(x-2)+3)^2=16": (
+        SRC_NESTED_PRODUCT_OF_GROUPS_SQUARED,
+        AST_NESTED_PRODUCT_OF_GROUPS_SQUARED,
+    ),
+    "3x^2-2x+1=-(x-4)": (SRC_QUADRATIC_EQ_NEGATED_GROUP, AST_QUADRATIC_EQ_NEGATED_GROUP),
+    "(2x+1)/(x-3)=4": (SRC_FRACTION_OF_SUM_OVER_DIFFERENCE, AST_FRACTION_OF_SUM_OVER_DIFFERENCE),
+    "((x+1)/2+3)/4=1": (SRC_NESTED_FRACTIONS, AST_NESTED_FRACTIONS),
+    "2(x+1)+3(x-1)=10": (SRC_TWO_MULTIPLIED_GROUPS, AST_TWO_MULTIPLIED_GROUPS),
+    "(x^2+1)^3=8": (SRC_POWER_IN_GROUP_IN_POWER, AST_POWER_IN_GROUP_IN_POWER),
+}
+
+ALL_FIXTURES = {**FIXTURES, **REVIEW_FIXTURES}
