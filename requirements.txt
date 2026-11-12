@@ -1,0 +1,10 @@
+# Symbolic algebra used by the verifier, inference, and mistake checks.
+sympy>=1.12
+
+# Web application dependencies (app.py serves the FastAPI API).
+fastapi>=0.110
+uvicorn[standard]>=0.27
+
+# Test dependencies.
+pytest>=8.0
+httpx>=0.27
