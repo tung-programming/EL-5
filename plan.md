@@ -29,19 +29,36 @@ Algebra uses layout to carry meaning: brackets group terms, superscripts are pow
 
 ## 3. Users
 
-- **Primary:** blind and low-vision students learning algebra, usually with a screen reader (NVDA, JAWS, Orca, VoiceOver).
+- **Primary:** blind and low-vision students in **classes 1–5** learning to solve simple equations, usually with a screen reader (NVDA, JAWS, Orca, VoiceOver).
 - **Secondary:** teachers, tutors, parents, accessibility support staff.
 
 ## 4. Scope
 
+**Target:** classes 1–5, **linear equations only** (e.g. `3x + 5 = 14`, `2(x + 3) = 10`, `x/2 = 3`).
+
 **In scope (MVP):**
 
 - one variable `x` and one `=`
-- `+ − * /`, powers (`^` or `**`), brackets
-- implicit multiplication (`3x`, `2(x+1)`)
-- linear and simple quadratic equations
+- `+ − * /`, brackets, implicit multiplication (`3x`, `2(x+1)`)
+- whole numbers and decimals, negative numbers
+- numeric powers such as `2^3` (whole-number powers only)
 
-**Out of scope (MVP):** multiple variables, inequalities, roots, logs, handwriting, spoken input, deciding correctness with AI.
+**Input limits** (enforced by the parser; see `docs/syntax.md`):
+
+| Limit | Value |
+|---|---|
+| Biggest number | 1,000,000 |
+| Decimal places | 4. More are **rounded to 4** (5 rounds up), and the student is told |
+| Powers | whole numbers from −10 to 10; no `x` inside a power |
+| Length | 200 characters |
+
+**Division by zero** is not an input error. It is **undefined**:
+- the parser accepts it and gives `sympy.nan` for that part;
+- the student is told, e.g. "x/0 divides by zero, which is undefined".
+
+**Non-linear equations** (powers of x, such as `x^2 = 4`) are outside the target scope. The parser still reads them. Member 3 decides whether the verifier checks them or answers "unable to determine".
+
+**Out of scope (MVP):** non-linear equations, multiple variables, inequalities, roots, logs, handwriting, spoken input, deciding correctness with AI.
 
 ## 5. Core principles
 
@@ -56,6 +73,7 @@ Algebra uses layout to carry meaning: brackets group terms, superscripts are pow
 - **Valid:** both equations have the same real solution set, and nothing was divided or multiplied by an expression that can be zero.
 - **Invalid:** the solution sets differ.
 - **Unable to determine:** the input is outside the supported scope, or SymPy can't decide and random-value testing is inconclusive.
+- **Undefined:** a side that divides by zero (`x/0`, `x/(2-2)`) has no value. The explanation says it is undefined, and the step is not marked valid.
 
 ## 6. User journeys
 
@@ -87,7 +105,9 @@ Algebra uses layout to carry meaning: brackets group terms, superscripts are pow
 - Clear, spoken error messages, e.g. "Unexpected symbol y at position 4. Only the variable x is supported."
 - Own recursive-descent parser. It supports implicit multiplication, unary minus, powers, nested brackets and exactly one `=`.
 - Output: an **OwnAST** (Number, Variable, Add, Sub, Mul, Div, Pow, Neg, Group, Equation) with source positions. It keeps the student's brackets exactly as typed.
-- `to_sympy()` converts the tree with `evaluate=False`.
+- Enforces the input limits in §4: numbers, decimal rounding, powers, length.
+- `to_sympy(tree)` keeps the student's form (`evaluate=False`). `to_sympy(tree, evaluate=True)` gives normal SymPy for solving. Division by zero becomes `sympy.nan` (undefined).
+- `notes(tree, text)` lists things to tell the student even though the input was accepted: rounding, division by zero.
 - Never uses `eval` or `parse_expr`.
 
 ### 7.2 Verifier — `engine/verifier.py` (P0)
@@ -112,6 +132,8 @@ Output: `InferenceResult {operation, operand, applied_to, expected, got, warning
 ### 7.4 Mistake checks — `engine/mistakes.py` (P0, runs only when invalid)
 
 Each check either proves its mistake or stays silent. The first match wins; if none match, the label is `null`.
+
+With the classes 1–5 linear scope, the first six checks are **P0**. `exponent_error`, `divide_by_variable` and `lost_solution` / `extra_solution` are **P2**: they only happen with powers of x.
 
 | Label                              | How it's detected                                                                | Example                     |
 | ---------------------------------- | -------------------------------------------------------------------------------- | --------------------------- |
@@ -335,7 +357,7 @@ Phase timing is flexible. Phase 1 is the ~10-hour partial demo.
 
 - **Unit tests:** one file per module. Every mistake check has a positive example, a near-miss that must _not_ trigger, and an edge case.
 - **Shared catalogue:** `tests/cases.csv`, run by one parametrized pytest. It includes the PRD §11.1 table plus:
-  - `x^2 = x → x = 1` → invalid + divide_by_variable
+  - `x/0 = 1` → the left side is undefined (division by zero)
   - `2(x+3)=10 → 2x+3=10` → invalid + partial_distribution
   - `x+5=9 → x=14` → invalid + sign_error
   - `x+2=5 → 5=x+2` → valid (swap)
@@ -416,6 +438,8 @@ The original is `audio_first_algebra_checker_PRD.md`. Section numbers marked "or
 | **Explorer keys**            | `B` = explain the parent relationship (orig. §4.8)                                                                                       | `C` = context, plus new `Home` and `?` keys (§7.6)                                                                                    | "Context" says what the key does more clearly. `Home` and `?` help a lost user                                                                                                       |
 | **Phases**                   | Phases 0–6: engine, explanations, explorer, frontend, testing, extensions (orig. §8)                                                     | Phases 0–4, each with a task table per member (§12)                                                                                   | Every phase now builds a working slice of the whole app, rather than leaving integration to the end. Extensions moved to §15                                                         |
 | **First-week plan**          | Day-by-day table (orig. §16)                                                                                                             | Phase 0 + Phase 1 (~10 h first demo)                                                                                                  | Same goal, tied to members instead of days                                                                                                                                           |
+| **Scope**                    | Students learning algebra; examples include quadratics (`x^2 = 4`)                                                                         | Classes 1–5, linear equations only, with input limits (§4)                                                                             | The target users are primary-school students. Small inputs also keep checking fast and safe                                                                                          |
+| **Division by zero**         | "Division by zero or possible zero divisor" listed as an error category (orig. §4.6)                                                     | Accepted and reported as **undefined** (§4, §5)                                                                                       | Students can still explore and hear the equation, and get a clear explanation instead of an input error                                                                             |
 | **Team split**               | M1 Parser & AST, M2 AST comparison & rules, M3 Verification & testing, M4 Explorer & accessibility, M5 Frontend & integration (orig. §9) | Same five areas, adapted (§11). M2 now owns inference and mistake checks; M1 also owns `speak.py`; M3 also owns explanation templates | Follows the new engine. Every member also writes their own docs, report section and slides, so no one is docs-only                                                                   |
 
 ### 16.2 Removed
@@ -424,12 +448,13 @@ The original is `audio_first_algebra_checker_PRD.md`. Section numbers marked "or
 | ----------------------------------------- | ------------------------------------------------------------------------------- |
 | Tree comparison module (`ast_comparator`) | Replaced by algebraic inference                                                 |
 | Rule IDs R01–R10 as separate code units   | Merged into 5 checks (mapping above)                                            |
-| Test case `x = 0 → x/x = 1` (orig. §11.1) | It isn't a real step. Replaced by `x^2 = x → x = 1` (dividing by x loses x = 0) |
+| Test case `x = 0 → x/x = 1` (orig. §11.1) | It isn't a real step. Division by zero is now covered by `x/0 = 1` (undefined)       |
 | React / Tailwind                          | Simpler stack, as above                                                         |
 
 ### 16.3 Added
 
-- Precise definitions of valid, invalid and unable to determine (§5).
+- Precise definitions of valid, invalid, unable to determine and undefined (§5).
+- Input limits for classes 1–5, with decimals rounded to 4 places (§4).
 - Random-value fallback in the verifier (§7.2).
 - 9 named mistake checks with exact detection rules (§7.4).
 - Explanation templates for every outcome (§7.5).
