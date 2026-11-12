@@ -4,7 +4,8 @@ import sympy as sp
 import pytest
 
 from engine import verifier
-from engine.verifier import VerificationResult, verify_equations
+from engine.parser import X
+from engine.verifier import VerificationResult, verify_equations, verify_step
 
 
 def equation(lhs, rhs):
@@ -200,3 +201,82 @@ def test_result_serializes_only_plain_strings(x):
         "reason",
     }
     assert all(isinstance(value, str) for value in serialized.values())
+
+
+def test_verify_step_accepts_valid_tuple_inputs():
+    result = verify_step((3 * X + 5, sp.Integer(14)), (3 * X, sp.Integer(9)))
+
+    assert result.status == "valid"
+    assert result.previous_solutions == result.current_solutions == "{3}"
+
+
+def test_verify_step_accepts_invalid_tuple_inputs():
+    result = verify_step(
+        (3 * X + 5, sp.Integer(14)),
+        (3 * X, sp.Integer(10)),
+    )
+
+    assert result.status == "invalid"
+    assert result.previous_solutions == "{3}"
+    assert result.current_solutions == "{10/3}"
+
+
+def test_verify_step_accepts_list_inputs():
+    result = verify_step([2 * X, sp.Integer(8)], [X, sp.Integer(4)])
+
+    assert result.status == "valid"
+
+
+def test_verify_step_accepts_existing_equalities():
+    previous = equation(3 * X + 5, 14)
+    current = equation(3 * X, 9)
+
+    result = verify_step(previous, current)
+
+    assert result.status == "valid"
+
+
+def test_verify_step_accepts_mixed_tuple_and_equality_inputs():
+    current = equation(3 * X, 9)
+
+    result = verify_step((3 * X + 5, sp.Integer(14)), current)
+
+    assert result.status == "valid"
+
+
+@pytest.mark.parametrize(
+    ("previous", "current"),
+    [
+        (None, (X, sp.Integer(1))),
+        ("x = 1", (X, sp.Integer(1))),
+        (7, (X, sp.Integer(1))),
+        ((X,), (X, sp.Integer(1))),
+        ([X, sp.Integer(1), sp.Integer(2)], (X, sp.Integer(1))),
+        ((X, 1), (X, sp.Integer(1))),
+    ],
+)
+def test_verify_step_returns_unknown_for_malformed_inputs(previous, current):
+    result = verify_step(previous, current)
+
+    assert result.status == "unknown"
+    assert result.reason
+
+
+def test_verify_step_agrees_with_verify_equations_using_parser_x():
+    previous = equation(3 * X + 5, 14)
+    current = equation(3 * X, 10)
+
+    adapted = verify_step((previous.lhs, previous.rhs), (current.lhs, current.rhs))
+    direct = verify_equations(previous, current, X)
+
+    assert adapted.to_dict() == direct.to_dict()
+
+
+def test_verify_step_does_not_suppress_unexpected_internal_errors(monkeypatch):
+    def raise_internal_error(*args, **kwargs):
+        raise RuntimeError("unexpected internal error")
+
+    monkeypatch.setattr(verifier, "verify_equations", raise_internal_error)
+
+    with pytest.raises(RuntimeError, match="unexpected internal error"):
+        verify_step((X, sp.Integer(1)), (X, sp.Integer(1)))

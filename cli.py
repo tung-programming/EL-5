@@ -1,9 +1,10 @@
 """Command-line demo using the shared math modules.
 
-Integration contract: parser.parse_equation(text) (or parser.parse(text)) returns
-an OwnAST with to_sympy(); verifier.verify_step(previous, current) (or the named
-aliases below) returns a result carrying status valid/invalid/unknown. This CLI
-intentionally reports unavailable dependencies instead of implementing them.
+Integration contract: parser.parse(text) returns an OwnAST with to_sympy();
+verifier.verify_step(previous, current) returns a result carrying status
+valid/invalid/unknown; explain.explain_step(verification, inference, mistake)
+returns the shared concise/detailed response. This CLI reports unavailable
+dependencies instead of implementing them.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ def check(previous_text: str, current_text: str) -> dict[str, Any]:
     new = _call_first(parser, ("parse_equation", "parse"), current_text)
     old_expr = old.to_sympy() if callable(getattr(old, "to_sympy", None)) else old
     new_expr = new.to_sympy() if callable(getattr(new, "to_sympy", None)) else new
-    verified = _call_first(verifier, ("verify_step", "verify_equations", "verify"), old_expr, new_expr)
+    verified = _call_first(verifier, ("verify_step",), old_expr, new_expr)
     status = verified.get("status") if isinstance(verified, dict) else getattr(verified, "status", None)
     if status is None and isinstance(verified, dict) and isinstance(verified.get("valid"), bool):
         status = "valid" if verified["valid"] else "invalid"
@@ -38,16 +39,17 @@ def check(previous_text: str, current_text: str) -> dict[str, Any]:
     mistake = mistakes.detect_mistake(old_expr, new_expr, inferred, status) if status == "invalid" else None
     response = {"status": status, "inference": inferred, "mistake": mistake,
                 "explanation": {"concise": "", "detailed": ""}}
-    try:
-        from engine import explain
-        explain_fn = next((getattr(explain, n, None) for n in ("explain_step", "explain")
-                           if callable(getattr(explain, n, None))), None)
-        if explain_fn:
-            text = explain_fn(verified, inferred, mistake)
-            if isinstance(text, dict):
-                response["explanation"] = {k: text.get(k, "") for k in ("concise", "detailed")}
-    except ImportError:
-        pass
+    from engine import explain
+    explain_fn = getattr(explain, "explain_step", None)
+    if not callable(explain_fn):
+        raise RuntimeError("engine.explain.explain_step is unavailable")
+    text = explain_fn(verified, inferred, mistake)
+    if not isinstance(text, dict) or any(
+        not isinstance(text.get(key), str) or not text[key].strip()
+        for key in ("concise", "detailed")
+    ):
+        raise RuntimeError("engine.explain.explain_step returned an incomplete explanation")
+    response["explanation"] = {key: text[key] for key in ("concise", "detailed")}
     return response
 
 
