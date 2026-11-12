@@ -105,6 +105,25 @@ def test_nonempty_mistake_labels_are_allowed(catalogue):
     )
 
 
+def test_valid_cases_have_no_expected_mistake_label(catalogue):
+    _, rows = catalogue
+    assert all(
+        not row["expected_mistake"]
+        for row in rows
+        if row["expected_status"] == "valid"
+    )
+
+
+def test_unconfirmed_m3_mistake_labels_remain_blank(catalogue):
+    _, rows = catalogue
+    by_id = {row["case_id"]: row for row in rows}
+
+    assert by_id["M3_009"]["expected_status"] == "invalid"
+    assert by_id["M3_009"]["expected_mistake"] == ""
+    assert by_id["M3_011"]["expected_status"] == "invalid"
+    assert by_id["M3_011"]["expected_mistake"] == ""
+
+
 def test_previous_current_pairs_are_unique(catalogue):
     _, rows = catalogue
     pairs = [(row["previous_step"], row["current_step"]) for row in rows]
