@@ -83,6 +83,12 @@ class Node:
     implicit: bool = False
     typed: str | None = None
 
+    def to_sympy(self, evaluate: bool = True):
+        """Same as the module function to_sympy(), but evaluated by default, because
+        callers of the method (cli.py, infer, mistakes) want SymPy ready for solving.
+        For an Equation, returns (left, right)."""
+        return to_sympy(self, evaluate=evaluate)
+
     def to_dict(self) -> dict:
         """OwnAST JSON exactly as described in docs/contracts.md."""
         return {

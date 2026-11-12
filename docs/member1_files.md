@@ -17,6 +17,7 @@ python -m engine.examples                                   # rebuild docs/examp
 | `engine/examples.py` | 0 | Writes `docs/example_trees.json` from the real parser |
 | `tests/test_parser.py` | 1–2 | 331 parser tests |
 | `tests/test_speak.py` | 2 | 56 speech tests |
+| `tests/test_parser_integration.py` | 2 | 14 tests: parser output → Member 2's `infer_operation` / `detect_mistake` → `cli.check` |
 | `docs/syntax.md` | 0–2 | What students can type: grammar, limits, signs and powers, error kinds, how things are spoken |
 | `docs/example_trees.json` | 0 | 7 real example trees (JSON + bracketed + spoken + SymPy) for Members 3 and 4 |
 | `report/final_report.md` | 0 | Report outline, with an owner for every section |
@@ -48,6 +49,7 @@ python -m engine.examples                                   # rebuild docs/examp
 | `parse(text)` | `Node` of type `Equation`, or raises `ParseError` | everyone |
 | `to_sympy(tree, evaluate=True)` | `(left, right)` as normal SymPy. **Use this for solving.** Dividing by zero gives `sympy.nan` (undefined) | Members 2, 3 |
 | `to_sympy(tree)` | `(left, right)` unevaluated: `2 + 3` stays `2 + 3` | when you need the student's form |
+| `tree.to_sympy()` | the same as `to_sympy(tree, evaluate=True)`. **Evaluated by default**, because `cli.py`, infer and mistakes call it to get SymPy ready for solving | `cli.py`, Member 2 |
 | `X` | the shared SymPy symbol `x`. **Always use this one**, not your own `Symbol("x")` | Members 2, 3 |
 | `node.to_dict()` | the tree as JSON, exactly as in `docs/contracts.md` | Member 5 (API) |
 | `walk(tree)` | every node, parent first | Member 4 |
@@ -126,6 +128,7 @@ A test fails if the file goes out of date.
 | File | Count | What it covers |
 |---|---|---|
 | `tests/test_parser.py` | 331 | 56 valid inputs with exact trees; 29 invalid inputs with error kinds; one input per error kind; exact messages and positions; contract JSON; spans; SymPy (both modes); Unicode; number limits and rounding; power limits; division by zero; example file up to date |
+| `tests/test_parser_integration.py` | 14 | Parser output works with Member 2's inference (add, subtract, multiply, divide, swap), mistakes (arithmetic, one side only), division by zero, and `cli.check()` end to end with a stand-in verifier |
 | `tests/test_speak.py` | 56 | Spoken forms of equations, minus vs negative, coefficients, powers, brackets; number words up to a million; subtrees |
 
 Beyond the test files, the code was also checked with random testing:
