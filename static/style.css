@@ -217,6 +217,7 @@ button:hover {
 [role="treeitem"] {
 	display: block;
 	padding: 0.2rem 0.45rem;
+	border: 2px solid transparent;
 	border-radius: 6px;
 	cursor: pointer;
 }
@@ -232,6 +233,123 @@ button:hover {
 	border: 1px solid var(--panel-border);
 	border-radius: 10px;
 	padding: 0.75rem 1rem;
+}
+
+/* ---- Step flow ---- */
+
+.field-hint {
+	margin: 0 0 0.75rem;
+	color: var(--muted);
+}
+
+.form-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+}
+
+.form-actions button {
+	flex: 1 1 10rem;
+}
+
+button.secondary {
+	background: var(--panel);
+	color: var(--primary-strong);
+	border: 2px solid var(--primary);
+}
+
+button.secondary:hover {
+	background: #eef4ff;
+}
+
+.step-history {
+	margin-top: 1rem;
+}
+
+.step-history h3 {
+	margin: 0 0 0.5rem;
+	font-size: 1.05rem;
+}
+
+.step-history .field-hint {
+	margin: 0;
+}
+
+.step-history ol {
+	margin: 0;
+	padding-left: 1.6rem;
+	display: grid;
+	gap: 0.4rem;
+}
+
+.step-history li {
+	padding: 0.45rem 0.6rem;
+	border: 1px solid var(--panel-border);
+	border-radius: 8px;
+	background: #f8fafc;
+}
+
+.step-history li:last-child {
+	border: 2px solid var(--primary-strong);
+}
+
+.step-equation {
+	display: block;
+	font-weight: 700;
+	font-size: 1.1rem;
+}
+
+.step-note {
+	display: block;
+	color: var(--muted);
+	font-size: 0.95rem;
+}
+
+.technical-details {
+	margin-top: 1rem;
+}
+
+.technical-details summary {
+	cursor: pointer;
+	font-weight: 600;
+	color: var(--muted);
+}
+
+.technical-details summary:focus {
+	outline: 3px solid var(--primary);
+	outline-offset: 2px;
+}
+
+/* ---- Explorer tree ---- */
+
+.explorer {
+	font-size: 1.05rem;
+}
+
+.explorer ul[role="group"] {
+	margin-left: 0.7rem;
+	padding-left: 0.9rem;
+	border-left: 2px solid var(--panel-border);
+}
+
+.node-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.5rem;
+}
+
+.node-name {
+	font-weight: 600;
+}
+
+.node-math {
+	padding: 0.05rem 0.5rem;
+	border: 1px solid var(--panel-border);
+	border-radius: 6px;
+	background: #f8fafc;
+	font-family: Consolas, "Courier New", monospace;
+	color: var(--text);
 }
 
 .sr-only {

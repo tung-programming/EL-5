@@ -17,6 +17,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	const explorerStatus = document.getElementById("explorer-status");
 	const explorerLive = document.getElementById("explorer-live");
 	const helpPanel = document.getElementById("explorer-help");
+	const newProblemButton = document.getElementById("new-problem");
+	const historyList = document.getElementById("step-history-list");
+	const historyEmpty = document.getElementById("history-empty");
 
 	let explorerView = null;
 	let explorerTree = null;
@@ -25,6 +28,8 @@ document.addEventListener("DOMContentLoaded", () => {
 	let latestDetail = "";
 	let latestAnnouncementTarget = "result";
 	let explorerRequest = 0;
+	// The correct steps of the current problem, oldest first: {equation, note}.
+	let stepHistory = [];
 
 	function rememberAnnouncement(text, target) {
 		if (!text) return;
@@ -149,6 +154,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			cancelSpeech,
 			schedule: (fn) => window.setTimeout(fn, 25),
 		});
+		decorateExplorer();
 		const opened = explorerView.open();
 		if (!opened.focused) {
 			throw new Error("The browser could not move focus into the explorer.");
@@ -182,14 +188,149 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	}
 
-	function showResult(data) {
+	function sameEquation(a, b) {
+		return a.replace(/\s+/g, "").toLowerCase() === b.replace(/\s+/g, "").toLowerCase();
+	}
+
+	// "x = 3", "x = -2.5", "x = 8/3" or the same with the sides swapped.
+	function isSolved(text) {
+		const compact = text.replace(/\s+/g, "").toLowerCase();
+		const value = "[+-]?\\d+(?:\\.\\d+)?(?:/\\d+)?";
+		return new RegExp(`^x=${value}$`).test(compact) || new RegExp(`^${value}=x$`).test(compact);
+	}
+
+	function renderHistory() {
+		historyList.replaceChildren();
+		stepHistory.forEach((step, index) => {
+			const item = document.createElement("li");
+			const equation = document.createElement("span");
+			equation.className = "step-equation";
+			equation.textContent = step.equation;
+			const note = document.createElement("span");
+			note.className = "step-note";
+			note.textContent = index === 0 ? "Starting equation" : step.note;
+			item.append(equation, note);
+			historyList.appendChild(item);
+		});
+		historyEmpty.hidden = stepHistory.length > 0;
+	}
+
+	function recordCorrectStep(previousText, currentText, note) {
+		const last = stepHistory[stepHistory.length - 1];
+		// A new or edited previous equation starts a new problem.
+		if (!last || !sameEquation(last.equation, previousText)) {
+			stepHistory = [{ equation: previousText, note: "" }];
+		}
+		stepHistory.push({ equation: currentText, note });
+		renderHistory();
+	}
+
+	function startNewProblem() {
+		cancelSpeech();
+		stepHistory = [];
+		renderHistory();
+		previousInput.value = "";
+		currentInput.value = "";
+		resultJson.textContent = "";
+		latestDetail = "";
+		detailButton.disabled = true;
+		setStatus("idle", "New problem. Type the starting equation, then your first step.");
+		previousInput.focus();
+		announceResult("New problem. Type the starting equation, then your first step.");
+	}
+
+	function focusAndSelect(input) {
+		input.focus();
+		input.select();
+	}
+
+	function showResult(data, previousText, currentText) {
 		const concise = data.explanation?.concise || `The step is ${data.status}.`;
-		setStatus(data.status, `${data.status.toUpperCase()}: ${concise}`);
+		let message = concise;
+
+		// Move focus before announcing: focusing an input cancels page speech.
+		if (data.status === "valid") {
+			recordCorrectStep(previousText, currentText, concise);
+			previousInput.value = currentText;
+			currentInput.value = "";
+			if (isSolved(currentText)) {
+				message = `${concise} You solved it: ${currentText}. Select Start a new problem to try another one.`;
+				newProblemButton.focus();
+			} else {
+				message = `${concise} Now type the step after ${currentText}.`;
+				currentInput.focus();
+			}
+		} else if (data.status === "invalid") {
+			message = `${concise} Try this step again.`;
+			focusAndSelect(currentInput);
+		} else {
+			message = `${concise} You can change the step and check it again.`;
+			focusAndSelect(currentInput);
+		}
+
+		setStatus(data.status, `${data.status.toUpperCase()}: ${message}`);
 		resultJson.textContent = JSON.stringify(data, null, 2);
 		latestDetail = data.explanation?.detailed || concise;
 		repeatButton.disabled = !latestAnnouncement && !concise;
 		detailButton.disabled = !latestDetail;
-		announceResult(concise);
+		announceResult(message);
+	}
+
+	// Visual-only maths for the explorer tree. Screen readers keep using each
+	// item's aria-label, so this is aria-hidden.
+	function mathText(node) {
+		if (!node) return "";
+		const kids = node.children || [];
+		const [a, b] = kids;
+		switch (node.type) {
+			case "Number":
+				return String(node.value ?? "");
+			case "Variable":
+				return String(node.value || "x");
+			case "Group":
+				return `(${mathText(a)})`;
+			case "Neg":
+				return `\u2212${mathText(a)}`;
+			case "Equation":
+				return `${mathText(a)} = ${mathText(b)}`;
+			case "Add":
+				return `${mathText(a)} + ${mathText(b)}`;
+			case "Sub":
+				return `${mathText(a)} \u2212 ${mathText(b)}`;
+			case "Div":
+				return `${mathText(a)} / ${mathText(b)}`;
+			case "Pow":
+				return `${mathText(a)}^${mathText(b)}`;
+			case "Mul": {
+				const numberLike = a && (a.type === "Number" || (a.type === "Neg" && a.children?.[0]?.type === "Number"));
+				const joins = b && ["Variable", "Group", "Pow"].includes(b.type);
+				return numberLike && joins ? `${mathText(a)}${mathText(b)}` : `${mathText(a)} \u00d7 ${mathText(b)}`;
+			}
+			default:
+				return node.value != null ? String(node.value) : "";
+		}
+	}
+
+	function decorateExplorer() {
+		explorerContainer.querySelectorAll('[role="treeitem"][data-node-id]').forEach((item) => {
+			const node = explorerNodes.get(item.getAttribute("data-node-id"));
+			const label = item.firstElementChild;
+			if (!node || !label || label.tagName !== "SPAN") return;
+			const row = document.createElement("span");
+			row.className = "node-row";
+			item.insertBefore(row, label);
+			label.className = "node-name";
+			row.appendChild(label);
+			// Leaves like "Constant term 3" already show their value in the name.
+			const symbols = mathText(node);
+			if (symbols && ((node.children || []).length || !label.textContent.includes(symbols))) {
+				const math = document.createElement("span");
+				math.className = "node-math";
+				math.setAttribute("aria-hidden", "true");
+				math.textContent = symbols;
+				row.appendChild(math);
+			}
+		});
 	}
 
 	function repeatLastAnnouncement() {
@@ -221,9 +362,19 @@ document.addEventListener("DOMContentLoaded", () => {
 	checkStepForm.addEventListener("submit", async (event) => {
 		event.preventDefault();
 
+		const previousText = previousInput.value.trim();
+		const currentText = currentInput.value.trim();
+		if (!previousText || !currentText) {
+			const missing = previousText ? currentInput : previousInput;
+			const message = previousText ? "Type your next step first." : "Type the previous equation first.";
+			setStatus("error", message);
+			missing.focus();
+			announceResult(message);
+			return;
+		}
 		const payload = {
-			previous_equation: previousInput.value,
-			current_equation: currentInput.value,
+			previous_equation: previousText,
+			current_equation: currentText,
 		};
 		const submitButton = checkStepForm.querySelector('button[type="submit"]');
 		submitButton.disabled = true;
@@ -233,11 +384,12 @@ document.addEventListener("DOMContentLoaded", () => {
 			setStatus("unknown", "Checking the step…");
 			resultJson.textContent = "";
 			const data = await fetchJson("/api/check-step", payload);
-			showResult(data);
+			showResult(data, previousText, currentText);
 		} catch (error) {
 			setStatus("error", `Could not check the step: ${error.message}`);
 			resultJson.textContent = JSON.stringify({ error: error.message }, null, 2);
 			latestDetail = "";
+			focusAndSelect(/previous/i.test(error.message) ? previousInput : currentInput);
 			announceResult(`Could not check the step. ${error.message}`);
 		} finally {
 			submitButton.disabled = false;
@@ -272,6 +424,15 @@ document.addEventListener("DOMContentLoaded", () => {
 	});
 
 	repeatButton.addEventListener("click", repeatLastAnnouncement);
+	newProblemButton.addEventListener("click", startNewProblem);
+
+	// Enter in the previous equation moves on to the step box while it is empty.
+	previousInput.addEventListener("keydown", (event) => {
+		if (event.key === "Enter" && !currentInput.value.trim()) {
+			event.preventDefault();
+			currentInput.focus();
+		}
+	});
 
 	detailButton.addEventListener("click", () => {
 		if (!latestDetail) return;

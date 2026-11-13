@@ -4,7 +4,7 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Audio-First Algebra Step Checker</title>
-		<link rel="stylesheet" href="/static/style.css?v=2" />
+		<link rel="stylesheet" href="/static/style.css?v=3" />
 	</head>
 	<body>
 		<header class="topbar">
@@ -15,19 +15,33 @@
 		<main class="layout" aria-label="Algebra checker layout">
 			<section class="panel" aria-labelledby="check-title">
 				<h2 id="check-title">Check a step</h2>
+				<p id="check-help" class="field-hint">Type your next step and press Enter. When a step is correct it moves up to become the previous equation, so you can type the next step straight away.</p>
 				<form id="check-step-form" novalidate>
 					<label for="previous-equation">Previous equation</label>
-					<input id="previous-equation" name="previous_equation" type="text" value="3x + 5 = 14" autocomplete="off" />
+					<input id="previous-equation" name="previous_equation" type="text" value="3x + 5 = 14" autocomplete="off" spellcheck="false" />
 
-					<label for="current-equation">Current equation</label>
-					<input id="current-equation" name="current_equation" type="text" value="3x = 9" autocomplete="off" />
+					<label for="current-equation">Your next step</label>
+					<input id="current-equation" name="current_equation" type="text" value="3x = 9" autocomplete="off" spellcheck="false" aria-describedby="check-help" />
 
-					<button type="submit">Check step</button>
+					<div class="form-actions">
+						<button type="submit">Check step</button>
+						<button id="new-problem" type="button" class="secondary">Start a new problem</button>
+					</div>
 				</form>
 
 				<div id="result-status" class="result-status" aria-live="off">Waiting for a step.</div>
 				<div id="result-announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
-				<pre id="result-json" class="result-json" aria-label="Full step response details" tabindex="0"></pre>
+
+				<section class="step-history" aria-labelledby="history-title">
+					<h3 id="history-title">Steps so far</h3>
+					<p id="history-empty" class="field-hint">No steps checked yet.</p>
+					<ol id="step-history-list"></ol>
+				</section>
+
+				<details class="technical-details">
+					<summary>Technical details</summary>
+					<pre id="result-json" class="result-json" aria-label="Full step response details" tabindex="0"></pre>
+				</details>
 				<div class="speech-controls" aria-label="Result speech controls">
 					<button id="repeat-result" type="button" disabled>Repeat</button>
 					<button id="more-detail" type="button" disabled>More detail</button>
@@ -62,6 +76,6 @@
 		</main>
 
 		<script src="/static/explorer_keys.js?v=2"></script>
-		<script src="/static/app.js?v=4"></script>
+		<script src="/static/app.js?v=5"></script>
 	</body>
 </html>
