@@ -87,7 +87,7 @@ input {
 input:focus,
 button:focus,
 [role="treeitem"]:focus {
-	outline: 3px solid rgba(11, 95, 255, 0.3);
+	outline: 3px solid var(--primary);
 	outline-offset: 2px;
 }
 
@@ -132,6 +132,57 @@ button:hover {
 	color: var(--warning);
 }
 
+.result-status[data-status="error"],
+.explorer-status[data-status="error"] {
+	background: #fff0f1;
+	border: 1px solid #f7c9d0;
+	color: var(--danger);
+}
+
+.explorer-status[data-status="success"] {
+	color: var(--success);
+}
+
+.speech-controls,
+.announcement-mode {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+	margin-top: 1rem;
+}
+
+.speech-controls button {
+	padding: 0.6rem 0.8rem;
+}
+
+.speech-controls button:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+.speech-controls input[type="range"] {
+	width: 8rem;
+}
+
+.announcement-mode {
+	border: 1px solid var(--panel-border);
+	border-radius: 8px;
+	padding: 0.65rem 0.8rem;
+}
+
+.announcement-mode label {
+	font-weight: 400;
+}
+
+.announcement-mode input {
+	width: auto;
+}
+
+.explorer-status {
+	margin-top: 0.75rem;
+}
+
 .result-json {
 	margin-top: 0.9rem;
 	max-height: 300px;
@@ -172,7 +223,7 @@ button:hover {
 
 [role="treeitem"][data-selected="true"] {
 	background: #e9f0ff;
-	border: 1px solid #bfd4ff;
+	border: 2px solid var(--primary-strong);
 }
 
 .explorer-help {

@@ -78,10 +78,24 @@ test("? announces the key list and does not move focus", () => {
   const r = c.handleKey(key("?", { shiftKey: true }));
   assert.equal(r.announce, EK.HELP_TEXT);
   assert.equal(c.getFocusId(), "n0.0.1");
-  for (const w of ["Up arrow", "Down arrow", "Left and right", "Space", "I:", "C:", "R:", "Home", "Escape"]) {
+  for (const w of ["Expression explorer", "Arrow Up", "Arrow Down", "Arrow Left", "Arrow Right", "Space", "I:", "C:", "R:", "Home", "Question mark", "Escape"]) {
     assert.ok(EK.HELP_TEXT.includes(w), w);
   }
   assert.equal(c.handleKey(key("?")).announce, EK.HELP_TEXT); // repeat is fine
+});
+
+test("view: ? displays and announces the complete discoverable shortcut list once", () => {
+  const spoken = [];
+  const m = mount(T, { mode: "speech", speak: (text) => spoken.push(text), cancelSpeech() {} });
+  m.view.open();
+  spoken.length = 0;
+  m.press("?");
+  assert.equal(m.view.helpPanel.hidden, false);
+  assert.equal(spoken.length, 1);
+  assert.equal(spoken[0], EK.HELP_TEXT);
+  assert.match(spoken[0], /^Expression explorer\. Here are the available keyboard controls\./);
+  assert.match(spoken[0], /Question mark: hear these keyboard controls again\./);
+  assert.match(spoken[0], /Escape: leave the explorer\./);
 });
 
 test("Escape exits once, then the controller ignores keys until reset", () => {
