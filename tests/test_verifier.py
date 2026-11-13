@@ -182,11 +182,23 @@ def test_solver_exception_returns_unknown(x, monkeypatch):
         raise RuntimeError("solver failure")
 
     monkeypatch.setattr(verifier.sp, "solveset", raise_solver_error)
-    result = verify_equations(equation(x, 1), equation(x, 1), x)
+    # Not a constant multiple of each other, so the random-value fallback can't help.
+    result = verify_equations(equation(x, 1), equation(x, 2), x)
 
     assert result.status == "unknown"
     assert result.previous_solutions == "unknown"
     assert "could not determine" in result.reason
+
+
+def test_solver_exception_uses_random_value_fallback_for_multiples(x, monkeypatch):
+    def raise_solver_error(*args, **kwargs):
+        raise RuntimeError("solver failure")
+
+    monkeypatch.setattr(verifier.sp, "solveset", raise_solver_error)
+    result = verify_equations(equation(x + 2, 5), equation(2 * x + 4, 10), x)
+
+    assert result.status == "valid"
+    assert "random values" in result.reason
 
 
 def test_result_serializes_only_plain_strings(x):
@@ -280,3 +292,66 @@ def test_verify_step_does_not_suppress_unexpected_internal_errors(monkeypatch):
 
     with pytest.raises(RuntimeError, match="unexpected internal error"):
         verify_step((X, sp.Integer(1)), (X, sp.Integer(1)))
+
+
+# ---- Phase 2: random-value fallback and zero divisors (parser trees) ----------
+
+def test_cubic_multiple_is_proven_valid_by_fallback(x):
+    result = verify_equations(equation(x**3, 8), equation(2 * x**3, 16), x)
+
+    assert result.status == "valid"
+    assert "multiplied by 2" in result.reason
+
+
+def test_fallback_never_decides_a_non_multiple(x):
+    # Same real solution, but not a multiple: still outside scope, still unknown.
+    result = verify_equations(equation(x**3, 8), equation(x, 2), x)
+
+    assert result.status == "unknown"
+
+
+def test_parser_trees_keep_division_by_x_that_sympy_would_cancel():
+    from engine.parser import parse
+
+    result = verify_step(parse("x = 0"), parse("x/x = 1"))
+
+    assert result.status == "invalid"
+    assert result.warnings == ("x cannot be 0 here, because the equation divides by x.",)
+
+
+def test_identity_with_a_hole_is_not_the_same_as_an_identity():
+    from engine.parser import parse
+
+    result = verify_step(parse("x/x = 1"), parse("x + 1 = x + 1"))
+
+    assert result.status == "invalid"
+
+
+def test_reciprocal_equation_is_solved_on_its_domain():
+    from engine.parser import parse
+
+    result = verify_step(parse("1/x = 2"), parse("1 = 2x"))
+
+    assert result.status == "valid"
+    assert result.current_solutions == "{1/2}"
+    assert result.warnings
+
+
+def test_solution_at_a_zero_divisor_is_removed():
+    from engine.parser import parse
+
+    result = verify_step(parse("x/(x - 1) = 1/(x - 1)"), parse("x = 1"))
+
+    assert result.status == "invalid"
+    assert result.previous_solutions == "EmptySet"
+    assert "x cannot be 1" in result.warnings[0]
+
+
+def test_parser_trees_without_division_match_tuple_inputs():
+    from engine.parser import parse
+
+    from_trees = verify_step(parse("3x + 5 = 14"), parse("3x = 10"))
+    from_tuples = verify_step(parse("3x + 5 = 14").to_sympy(), parse("3x = 10").to_sympy())
+
+    assert from_trees.to_dict() == from_tuples.to_dict()
+    assert from_trees.warnings == ()

@@ -34,7 +34,7 @@ FOUNDATIONAL_CASES = {
     ("x + 5 = 9", "x = 4"): ("valid", ""),
     ("x + 5 = 9", "x = 5"): ("invalid", "arithmetic_error"),
     ("2x = 8", "x = 4"): ("valid", ""),
-    ("2x = 8", "x = 5"): ("invalid", ""),
+    ("2x = 8", "x = 5"): ("invalid", "arithmetic_error"),
     ("2(x + 3) = 10", "2x + 6 = 10"): ("valid", ""),
     ("2x + 6 = 10", "2x = 4"): ("valid", ""),
     ("x^2 = 1", "x = 1"): ("invalid", "lost_solution"),

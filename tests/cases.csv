@@ -2,7 +2,7 @@ case_id,category,previous_step,current_step,expected_status,expected_mistake,exp
 FOUND_001,arithmetic,"x + 5 = 9","x = 4",valid,,"Subtracting 5 from both sides preserves the solution x = 4.","PRD foundational case 1"
 FOUND_002,arithmetic,"x + 5 = 9","x = 5",invalid,arithmetic_error,"The first equation has solution x = 4, while the proposed equation has solution x = 5.","PRD foundational case 2; required label"
 FOUND_003,coefficient,"2x = 8","x = 4",valid,,"Dividing both sides by 2 preserves the solution x = 4.","PRD foundational case 3"
-FOUND_004,coefficient,"2x = 8","x = 5",invalid,,"The first equation has solution x = 4, while the proposed equation has solution x = 5.","PRD foundational case 4"
+FOUND_004,coefficient,"2x = 8","x = 5",invalid,arithmetic_error,"The first equation has solution x = 4, while the proposed equation has solution x = 5.","PRD foundational case 4; dividing 8 by 2 gives 4, not 5 (same shape as M3_008)"
 FOUND_005,distribution,"2(x + 3) = 10","2x + 6 = 10",valid,,"Distributing 2 gives an equivalent equation with solution x = 2.","PRD foundational case 5"
 FOUND_006,arithmetic,"2x + 6 = 10","2x = 4",valid,,"Subtracting 6 from both sides preserves the solution x = 2.","PRD foundational case 6"
 FOUND_007,solution_set,"x^2 = 1","x = 1",invalid,lost_solution,"The first equation has solutions x = -1 and x = 1; the proposed equation keeps only x = 1.","PRD foundational case 7"

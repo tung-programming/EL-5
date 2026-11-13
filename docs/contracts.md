@@ -2,9 +2,10 @@
 
 Owner: Member 2
 
-Contract version: 1.1 (PRD v4; 12 November 2026)
+Contract version: 1.2 (Phase 2; 13 November 2026)
 
 Changes:
+- 1.2: MistakeResult gains `operation`, `operand` and `before` (null when not known), and all ten labels are active. InferenceResult gains the `combined` operation and, for `rewrite`, a `kind`. Operands may be x-expressions (`"3*x + 2"`). All additions; no existing field changed meaning.
 - 1.1: OwnAST nodes gain `implicit` and `typed`. Number `value` is rounded to 4 decimal places. Scope is classes 1–5, linear equations.
 
 These JSON contracts are shared by the Python backend, CLI, API, and frontend. Keep serialized mathematical values as strings; never put SymPy/Python objects in JSON. A change to a frozen field, meaning, or allowed value requires agreement from the team.
@@ -40,18 +41,24 @@ Additional equation examples (shown as source → tree shape):
 
 ## InferenceResult
 
-All fields are required. `operation` is a string operation identifier (`add`, `subtract`, `multiply`, `divide`, `swap_sides`, `rewrite`, or `unknown`). `operand` is a stringified constant/expression, or null when no operand applies or no operation can be inferred. `applied_to` is `both_sides`, `left_side_only`, `right_side_only`, or `unknown`. `expected` and `got` are serialized mathematical values or null when unavailable. `warnings` is an array of strings. No inference is represented by `null` from the inference function; if a response requires an inference object, use `operation:"unknown"`, null operand/expected/got, `applied_to:"unknown"`, and a warning explaining why.
+All fields are required. `operation` is a string operation identifier (`add`, `subtract`, `multiply`, `divide`, `swap_sides`, `rewrite`, `combined`, or `unknown`). `combined` means several steps were applied to both sides at once (`x + 2 = 5 → 2x = 6`). `operand` is a stringified constant/expression (`"5"`, `"3*x + 2"`), or null when no operand applies or no operation can be inferred. `applied_to` is `both_sides`, `left_side_only`, `right_side_only`, or `unknown`; for `rewrite` it names the side(s) that were rewritten. A `rewrite` also has `kind`: `expand`, `factor`, `collect_like_terms`, `reorder`, or `simplify`. Rewrites are only detected when the engine is given the parser's trees, because SymPy has already lost the student's brackets. `expected` and `got` are serialized mathematical values or null when unavailable. `warnings` is an array of strings. No inference is represented by `null` from the inference function; if a response requires an inference object, use `operation:"unknown"`, null operand/expected/got, `applied_to:"unknown"`, and a warning explaining why.
 
 ```json
 {"operation":"subtract","operand":"5","applied_to":"both_sides","expected":null,"got":null,"warnings":[]}
 ```
 
+```json
+{"operation":"rewrite","operand":null,"applied_to":"left_side_only","expected":null,"got":null,"warnings":[],"kind":"expand"}
+```
+
 ## MistakeResult
 
-All fields are required when a result exists. Phase 1 labels are `one_side_only` and `arithmetic_error`. `expected` and `got` are serialized values (strings), or null if unavailable. `location` identifies the side containing the discrepant value: `left_side`, `right_side`, or `unknown`. A null result means no supported mistake was proven. Later labels such as `sign_error`, `wrong_inverse_op`, `partial_distribution`, `coefficient_error`, and `exponent_error` are outside Phase 1.
+All fields are required when a result exists. Labels: `one_side_only`, `sign_error`, `wrong_inverse_op`, `arithmetic_error`, `partial_distribution`, `coefficient_error`, `exponent_error`, `divide_by_variable`, `lost_solution`, `extra_solution` (detection rules: plan.md §7.4). `expected` and `got` are serialized values (strings), or null if unavailable; for `divide_by_variable`, `lost_solution` and `extra_solution` they are the previous and current solution sets (`"{0, 1}"`, `"{1}"`, `"EmptySet"`). `location` identifies the side containing the discrepant value: `left_side`, `right_side`, or `unknown` (always `unknown` for the solution-set labels). A null result means no supported mistake was proven.
+
+`operation`, `operand` and `before` describe the step that was done correctly on the other side, so the explanation can show the calculation ("14 minus 5 is 9, not 10"). `operation` is `add`, `subtract`, `multiply` or `divide`; `operand` is the number (or, for `divide_by_variable`, the expression with x); `before` is the value of the `location` side before the step. Each is null when it does not apply (the structural and solution-set labels).
 
 ```json
-{"label":"arithmetic_error","expected":"9","got":"10","location":"right_side"}
+{"label":"arithmetic_error","expected":"9","got":"10","location":"right_side","operation":"subtract","operand":"5","before":"14"}
 ```
 
 ## CheckStepResponse

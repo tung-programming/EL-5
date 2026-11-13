@@ -36,6 +36,9 @@ def test_invalid_arithmetic_step_has_grounded_mistake_data(capsys):
         "expected": "9",
         "got": "10",
         "location": "right_side",
+        "operation": "subtract",
+        "operand": "5",
+        "before": "14",
     }
     assert payload["explanation"]["concise"]
     assert payload["explanation"]["detailed"]

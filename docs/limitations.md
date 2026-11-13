@@ -2,36 +2,43 @@
 
 Owner: Member 3
 
-## Phase 1 verifier scope
+## Verifier scope
 
-- The verifier currently accepts SymPy `Equality` objects and one SymPy
-  `Symbol`; it is not wired to M1's parser because that parser is not yet
-  implemented.
-- It decides only real polynomial equations of degree at most two, with exact
-  real coefficients. Inputs with unsupported symbols, floating-point
-  coefficients, higher degree, non-polynomial expressions, or unresolved
-  `ConditionSet` relationships return `unknown`.
-- A variable-dependent denominator or zero power is conservatively classified
-  as `unknown`. SymPy may simplify expressions such as `x/x` before the
-  verifier receives them; the parser integration must preserve unevaluated
-  domain-sensitive expressions for the guard to detect them.
-- Set equality uses exact SymPy equality and mutual subset checks. If SymPy
-  cannot prove equality or inequality, the verifier returns `unknown` rather
-  than approximating roots or sampling values.
+- The app passes the parser's trees to `verify_step`. Plain SymPy pairs and
+  `Equality` objects are still accepted (tests and the CLI fallback use them).
+- It solves real polynomial equations of degree at most two exactly, with exact
+  real coefficients. Unsupported symbols, floating-point coefficients and
+  non-polynomial expressions return `unknown`.
+- Higher degree: the random-value fallback can still prove a step `valid` when
+  the new equation is a constant multiple of the old one (`x^3 = 8 → 2x^3 = 16`).
+  It never proves `invalid`, so `x^3 = 8 → x = 2` stays `unknown`.
+- The fallback finds the constant with 20 random rationals but then proves the
+  identity exactly. It is skipped when either equation divides by x.
 
-## Deferred to Phase 2
+## Zero divisors
 
-The verifier has no random-value fallback, advanced zero-divisor warnings,
-solution-based mistake detection, or divide-by-variable / lost-solution /
-extra-solution labels. Explanations do not implement detailed templates or
-mistake-specific wording. They use only a basic valid/invalid/unknown response
-and may name a supported operation only when supplied consistent inference
-data is available.
+- With parser trees, every division by an expression with x (and every power
+  of x with exponent ≤ 0) removes its zeros from that equation's solution set
+  and adds a warning ("x cannot be 0 here, because the equation divides by x.").
+  The explanation's detailed level reads these warnings out.
+- With plain SymPy input, SymPy may already have cancelled `x/x`, so a
+  variable denominator is still classified as `unknown`, as in Phase 1.
 
-## Integration dependencies
+## Mistake detection
 
-M1 must provide SymPy `Equality` objects while preserving relevant expression
-domains. M2 may provide an inference structure with `operation`, `operand`, and
-`applied_to`; Phase 1 explanation text uses it only for recognized arithmetic
-operations explicitly applied to both sides. The verifier and explanation
-modules do not call or modify M1 or M2 code.
+- A label is given only when the check rebuilds the student's exact line;
+  otherwise the mistake is null and the explanation gives both solution sets.
+- A one-sided step counts only when it is one a student would take: removing
+  the constant term, or multiplying/dividing by a whole number (or its
+  reciprocal). Unusual steps such as `x + 7 = 12 → x + 2 = 8` get no label.
+- A wrong sign after dividing by a negative (`-3x = 12 → x = 4`) is not named.
+- The structural labels (`partial_distribution`, `exponent_error`,
+  `coefficient_error`) need the parser's trees; with SymPy input they are skipped.
+
+## Explanations
+
+- Concise and detailed text are built only from the verified JSON. Without
+  `operation`/`operand`/`before` evidence, mistake text falls back to "The right
+  side should be 9, not 10."
+- Maths in explanations is written for speech: `x**2` becomes "x squared",
+  `2*x` becomes "2x", `sqrt(2)` becomes "√2".

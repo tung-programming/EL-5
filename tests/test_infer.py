@@ -39,7 +39,9 @@ def test_variable_ratio_not_reported():
 
 
 def test_zero_denominator_is_safe():
-    assert infer_operation((2*x, 0), (x, 0)) is None
+    # No 0/0: a zero side is handled by the generic check, which names the division.
+    got = infer_operation((2*x, 0), (x, 0))
+    assert (got["operation"], got["operand"]) == ("divide", "2")
 
 
 def test_negative_constant_difference():
@@ -79,7 +81,7 @@ def test_ratio_with_symbolic_denominator_stays_unsupported():
 
 
 def test_zero_sides_and_zero_simplifications_are_safe():
-    assert infer_operation((2*x, 0), (x, 0)) is None
+    assert infer_operation((2*x, 0), (x, 0))["operation"] == "divide"
     assert infer_operation((x + 0, 2), (x, 2)) is None
 
 
@@ -91,3 +93,52 @@ def test_restricted_domain_ratio_is_not_called_constant():
 def test_exact_decimal_constants_are_supported():
     got = infer_operation((2*x, sp.Rational(3, 10)), (x, sp.Rational(3, 20)))
     assert (got["operation"], got["operand"]) == ("divide", "2")
+
+
+# ---- Phase 2: x-terms, rewrites and the generic check -----------------------
+
+from engine.parser import parse
+
+
+def _infer(previous, current):
+    return infer_operation(parse(previous), parse(current))
+
+
+def test_subtracting_an_x_term_from_both_sides():
+    got = _infer("5x + 2 = 3x + 8", "2x = 6")
+    assert (got["operation"], got["operand"]) == ("subtract", "3*x + 2")
+    got = _infer("x = 12 - 2x", "3x = 12")
+    assert (got["operation"], got["operand"]) == ("add", "2*x")
+
+
+def test_rewrite_kinds():
+    cases = {
+        ("2(x + 3) = 10", "2x + 6 = 10"): "expand",
+        ("2x + 6 = 10", "2(x + 3) = 10"): "factor",
+        ("2x + 3x = 20", "5x = 20"): "collect_like_terms",
+        ("3x + 5 = 14", "5 + 3x = 14"): "reorder",
+        ("x*x = 9", "x^2 = 9"): "simplify",
+    }
+    for (previous, current), kind in cases.items():
+        got = _infer(previous, current)
+        assert (got["operation"], got["kind"], got["applied_to"]) == ("rewrite", kind, "left_side_only")
+
+
+def test_rewrite_needs_parser_trees():
+    # The same step as SymPy pairs looks unchanged, so nothing is claimed.
+    assert infer_operation((2*x + 6, 10), (2*x + 6, 10)) is None
+
+
+def test_rewrite_on_the_right_side():
+    got = _infer("x = 2(3 + 1)", "x = 6 + 2")
+    assert (got["operation"], got["applied_to"]) == ("rewrite", "right_side_only")
+
+
+def test_equal_sides_are_a_rewrite_not_a_swap():
+    got = _infer("0*x = 0", "0 = 0")
+    assert got["operation"] == "rewrite"
+
+
+def test_generic_same_steps_on_both_sides():
+    assert _infer("x + 2 = 5", "2x = 6")["operation"] == "combined"
+    assert _infer("x + 2 = 5", "2x = 7") is None    # near miss: not a multiple

@@ -29,14 +29,18 @@ def check(previous_text: str, current_text: str) -> dict[str, Any]:
     new = _call_first(parser, ("parse_equation", "parse"), current_text)
     old_expr = old.to_sympy() if callable(getattr(old, "to_sympy", None)) else old
     new_expr = new.to_sympy() if callable(getattr(new, "to_sympy", None)) else new
-    verified = _call_first(verifier, ("verify_step",), old_expr, new_expr)
+    # Parser trees keep the student's brackets and divisions; the engine modules
+    # accept them directly. Fall back to SymPy for a parser without trees.
+    old_arg = old if getattr(old, "type", None) == "Equation" else old_expr
+    new_arg = new if getattr(new, "type", None) == "Equation" else new_expr
+    verified = _call_first(verifier, ("verify_step",), old_arg, new_arg)
     status = verified.get("status") if isinstance(verified, dict) else getattr(verified, "status", None)
     if status is None and isinstance(verified, dict) and isinstance(verified.get("valid"), bool):
         status = "valid" if verified["valid"] else "invalid"
     if status not in ("valid", "invalid", "unknown"):
         raise RuntimeError("verifier result must provide status valid, invalid, or unknown")
-    inferred = infer.infer_operation(old_expr, new_expr)
-    mistake = mistakes.detect_mistake(old_expr, new_expr, inferred, status) if status == "invalid" else None
+    inferred = infer.infer_operation(old_arg, new_arg)
+    mistake = mistakes.detect_mistake(old_arg, new_arg, inferred, status) if status == "invalid" else None
     response = {"status": status, "inference": inferred, "mistake": mistake,
                 "explanation": {"concise": "", "detailed": ""}}
     from engine import explain

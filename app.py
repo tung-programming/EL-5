@@ -89,8 +89,13 @@ def health() -> dict[str, str]:
 @app.get("/api/rules")
 def rules() -> dict[str, Any]:
 	return {
-		"operations": ["add", "subtract", "multiply", "divide", "swap_sides", "rewrite", "unknown"],
-		"mistake_labels": ["one_side_only", "arithmetic_error"],
+		"operations": ["add", "subtract", "multiply", "divide", "swap_sides", "rewrite", "combined", "unknown"],
+		"rewrite_kinds": ["expand", "factor", "collect_like_terms", "reorder", "simplify"],
+		"mistake_labels": [
+			"one_side_only", "sign_error", "wrong_inverse_op", "arithmetic_error",
+			"partial_distribution", "coefficient_error", "exponent_error",
+			"divide_by_variable", "lost_solution", "extra_solution",
+		],
 		"status_values": ["valid", "invalid", "unknown"],
 		"notes": "The verifier decides validity. Inference suggests the operation. Mistakes are only reported for invalid steps.",
 	}
@@ -112,12 +117,12 @@ async def check_step(request: Request) -> dict[str, Any]:
 	except ValueError as exc:
 		raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-	previous_expression = previous_ast.to_sympy()
-	current_expression = current_ast.to_sympy()
-
-	verification = verify_step(previous_expression, current_expression)
-	inference = infer_operation(previous_expression, current_expression)
-	mistake = detect_mistake(previous_expression, current_expression, inference, verification) if verification.status == "invalid" else None
+	# Pass the parser's trees, not SymPy: only the trees keep the student's own
+	# brackets and divisions, which rewrites, structural mistakes and zero-divisor
+	# checks need. Each module converts to SymPy itself.
+	verification = verify_step(previous_ast, current_ast)
+	inference = infer_operation(previous_ast, current_ast)
+	mistake = detect_mistake(previous_ast, current_ast, inference, verification) if verification.status == "invalid" else None
 	explanation = explain_step(verification, inference, mistake)
 
 	result = {

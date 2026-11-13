@@ -135,4 +135,7 @@ def test_required_invalid_step_is_decided_by_verifier():
 		"expected": "9",
 		"got": "10",
 		"location": "right_side",
+		"operation": "subtract",
+		"operand": "5",
+		"before": "14",
 	}

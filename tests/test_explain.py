@@ -23,7 +23,10 @@ def test_valid_explanation_uses_supplied_verified_inference():
     )
 
     expected = "Correct. You subtracted 5 from both sides."
-    assert result == {"concise": expected, "detailed": expected}
+    assert result["concise"] == expected
+    # Phase 2: the detailed level adds why the step works.
+    assert result["detailed"].startswith(expected + " ")
+    assert "balanced" in result["detailed"]
 
 
 def test_invalid_explanation_without_mistake_classification():
@@ -213,3 +216,78 @@ def test_explain_step_matches_build_explanation_for_equivalent_inputs():
     direct = build_explanation("valid", verification, inference, mistake=None)
 
     assert adapted == direct
+
+
+# ---- Phase 2 templates ----------------------------------------------------------
+
+from engine.parser import parse
+from engine.verifier import verify_step
+from engine.infer import infer_operation
+from engine.mistakes import detect_mistake
+
+
+def _explain(previous, current):
+    old, new = parse(previous), parse(current)
+    verification = verify_step(old, new)
+    inference = infer_operation(old, new)
+    mistake = detect_mistake(old, new, inference, verification)
+    return explain_step(verification, inference, mistake)
+
+
+def test_arithmetic_error_names_the_operation_and_numbers():
+    result = _explain("3x = 9", "x = 2")
+    assert result["concise"] == ("This step is incorrect. You divided both sides by 3, which is "
+                                 "the right idea, but 9 divided by 3 is 3, not 2.")
+    assert "previous equation has solution x = 3" in result["detailed"]
+
+
+def test_one_side_only_says_which_side_was_missed():
+    concise = _explain("3x + 5 = 14", "3x = 14")["concise"]
+    assert "subtracted 5 from the left side but not the right side" in concise
+    assert "14 minus 5, which is 9, not 14" in concise
+
+
+def test_sign_error_points_at_the_sign():
+    result = _explain("x + 5 = 9", "x = 14")
+    assert "Check the sign" in result["concise"]
+    assert "added 5 on the right side instead" in result["detailed"]
+
+
+def test_wrong_inverse_op_names_both_operations():
+    concise = _explain("2x = 8", "x = 6")["concise"]
+    assert "divided the left side by 2" in concise
+    assert "subtracted 2 instead" in concise
+
+
+def test_structural_mistakes_show_the_correct_form():
+    assert "should be 2x + 6, not 2x + 3" in _explain("2(x + 3) = 10", "2x + 3 = 10")["concise"]
+    assert "should be 5x, not 6x" in _explain("2x + 3x = 20", "6x = 20")["concise"]
+    assert "x squared + 2x + 1, not x squared + 1" in _explain("(x + 1)^2 = 9", "x^2 + 1 = 9")["concise"]
+
+
+def test_solution_mistakes_name_the_solution():
+    assert "divided both sides by x, which could be zero, so the step loses x = 0" in \
+        _explain("x^2 = x", "x = 1")["concise"]
+    assert "It loses a solution" in _explain("x^2 = 4", "x = 2")["concise"]
+    assert "It adds a solution" in _explain("x = 2", "x^2 = 4")["concise"]
+
+
+def test_valid_rewrites_swaps_and_combined_steps():
+    assert _explain("2(x + 3) = 10", "2x + 6 = 10")["concise"] == \
+        "Correct. You expanded the brackets on the left side."
+    assert _explain("x + 2 = 5", "5 = x + 2")["concise"] == "Correct. You swapped the two sides."
+    assert _explain("5x + 2 = 3x + 8", "2x = 6")["concise"] == "Correct. You subtracted 3x + 2 from both sides."
+    assert _explain("x + 2 = 5", "2x = 6")["concise"] == "Correct. You did the same steps to both sides."
+
+
+def test_zero_divisor_warning_is_in_the_detailed_text_only():
+    result = _explain("1/x = 2", "1 = 2x")
+    assert "cannot be 0" not in result["concise"]
+    assert "Note: x cannot be 0 here, because the equation divides by x." in result["detailed"]
+
+
+def test_mistake_without_operation_evidence_still_gives_the_numbers():
+    result = build_explanation("invalid", mistake={
+        "label": "arithmetic_error", "expected": "9", "got": "10", "location": "right_side"})
+    assert result["concise"] == ("This step is incorrect. Check your arithmetic. "
+                                 "The right side should be 9, not 10.")

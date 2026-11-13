@@ -25,6 +25,21 @@ an operation only when supported inference data explicitly says it was applied
 to both sides. Invalid explanations may include only simple solution values
 from the verification result. Mistake labels are not rendered by this phase.
 
+## Phase 2 additions
+
+- `tests/test_check_cases.py` runs every row of `tests/cases.csv` through the
+  real API (parser, verifier, inference, mistakes, explanations). This is the
+  Phase 2 exit check in plan.md §12; all 47 rows pass.
+- Each mistake label has a positive example, a near miss that must not trigger
+  and an edge case (`tests/test_mistakes.py`).
+- Verifier: random-value fallback and zero-divisor domains (`tests/test_verifier.py`).
+- Explanations: one test per template family (`tests/test_explain.py`).
+- `FOUND_004` (`2x = 8 → x = 5`) now expects `arithmetic_error`. It previously
+  expected no label, which contradicted `M3_008` (`3x = 12 → x = 3`,
+  `arithmetic_error`), the same kind of step.
+
+Run everything with `python -m pytest`.
+
 ## Running the tests
 
 Install the dependencies when needed with `python -m pip install pytest sympy`,

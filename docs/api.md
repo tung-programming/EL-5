@@ -23,7 +23,8 @@ Returns the service status and version.
 
 ## `GET /api/rules`
 
-Returns supported operation identifiers, mistake labels, and result statuses.
+Returns supported operation identifiers, rewrite kinds, all ten mistake
+labels, and result statuses.
 The verifier owns the validity decision; operation inference does not determine
 whether a step is valid. Mistake detection only runs for invalid steps.
 
