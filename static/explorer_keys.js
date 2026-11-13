@@ -78,17 +78,20 @@
 
   // [key label, what it does]. Order is the spoken order (guide §4).
   var HELP_ITEMS = [
-    ["Up arrow", "move to the bigger part"],
-    ["Down arrow", "move inside"],
-    ["Left and right arrows", "previous and next part at the same level"],
+    ["Arrow Up", "move to the parent expression"],
+    ["Arrow Down", "move to the first child"],
+    ["Arrow Left", "move to the previous sibling"],
+    ["Arrow Right", "move to the next sibling"],
     ["Space", "hear this part"],
-    ["I", "more information"],
-    ["C", "how this part connects to the rest"],
+    ["I", "hear a detailed explanation of this part"],
+    ["C", "hear how this part connects to the rest"],
     ["R", "read the whole equation again"],
-    ["Home", "back to the whole equation"],
+    ["Home", "return to the whole equation"],
+    ["Question mark", "hear these keyboard controls again"],
     ["Escape", "leave the explorer"],
   ];
   var HELP_TEXT =
+    "Expression explorer. Here are the available keyboard controls. " +
     HELP_ITEMS.map(function (p) {
       return p[0] + ": " + p[1] + ".";
     }).join(" ");

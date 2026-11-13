@@ -4,7 +4,7 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Audio-First Algebra Step Checker</title>
-		<link rel="stylesheet" href="/static/style.css" />
+		<link rel="stylesheet" href="/static/style.css?v=2" />
 	</head>
 	<body>
 		<header class="topbar">
@@ -25,8 +25,17 @@
 					<button type="submit">Check step</button>
 				</form>
 
-				<div id="result-status" class="result-status" role="status" aria-live="polite">Waiting for a step.</div>
-				<pre id="result-json" class="result-json" aria-live="polite"></pre>
+				<div id="result-status" class="result-status" aria-live="off">Waiting for a step.</div>
+				<div id="result-announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+				<pre id="result-json" class="result-json" aria-label="Full step response details" tabindex="0"></pre>
+				<div class="speech-controls" aria-label="Result speech controls">
+					<button id="repeat-result" type="button" disabled>Repeat</button>
+					<button id="more-detail" type="button" disabled>More detail</button>
+					<button id="stop-speech" type="button" disabled>Stop</button>
+					<label for="speech-rate">Speech speed</label>
+					<input id="speech-rate" type="range" min="0.75" max="1.5" step="0.25" value="1" disabled />
+					<output id="speech-rate-value" for="speech-rate">1x</output>
+				</div>
 			</section>
 
 			<section class="panel" aria-labelledby="explorer-title">
@@ -34,16 +43,25 @@
 				<form id="explorer-form" novalidate>
 					<label for="expression-input">Expression</label>
 					<input id="expression-input" name="expression" type="text" value="2(x + 3) = 12" autocomplete="off" />
-					<button type="submit">Explore</button>
+					<button id="explore-button" type="submit">Explore</button>
 				</form>
 
+				<fieldset class="announcement-mode">
+					<legend>Announcements</legend>
+					<p>Choose one audio channel. Screen-reader mode uses live announcements; browser speech reads aloud when no screen reader is active.</p>
+					<label><input type="radio" name="announcement-mode" value="screen-reader" checked /> Screen reader</label>
+					<label><input type="radio" name="announcement-mode" value="speech" /> Browser speech (no screen reader)</label>
+				</fieldset>
+				<div id="explorer-status" class="explorer-status" aria-live="off">Enter an equation and select Explore.</div>
 				<div id="explorer-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
-				<div id="explorer" class="explorer" tabindex="0" aria-label="Equation explorer"></div>
-				<div id="explorer-help" class="explorer-help" hidden></div>
+				<div id="explorer" class="explorer" aria-label="Equation explorer" hidden></div>
+				<div id="explorer-help" class="explorer-help" hidden>
+					<p>With NVDA or Orca, use focus mode while navigating. Browse mode may intercept the arrow and letter keys.</p>
+				</div>
 			</section>
 		</main>
 
-		<script src="/static/explorer_keys.js"></script>
-		<script src="/static/app.js"></script>
+		<script src="/static/explorer_keys.js?v=2"></script>
+		<script src="/static/app.js?v=4"></script>
 	</body>
 </html>

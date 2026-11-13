@@ -3,11 +3,11 @@
 Owner: Member 4
 Related: `docs/keyboard_guide.md` (what the keys should do), plan.md §6 (journeys), §7.8 (page), §13 (acceptance criteria).
 
-**Status: not yet run.** Every box is unchecked. No NVDA or Orca testing has been performed. Fill in the results table at the bottom only from real sessions.
+**Status: manual screen-reader checklist not yet run.** Every box is unchecked. No NVDA or Orca testing has been performed. Browser-level integration checks were run on 13 November 2026; see the results below. Fill in the results table at the bottom only from real screen-reader sessions.
 
 ## Phase 3 status (read this first)
 
-**NVDA and Orca testing: NOT YET PERFORMED.** The page (`static/index.html`, `app.js`, `style.css`) is still a stub owned by Member 5, so there is nothing to run a screen reader against. No OS, browser or screen-reader version has been recorded because no session happened. Every manual box below stays unchecked. The results table is empty on purpose.
+**NVDA and Orca testing: NOT YET PERFORMED.** The page (`static/index.html`, `app.js`, `style.css`) is now integrated with the parser API and Member 4's explorer. Browser automation verified tree updates, keyboard handling, focus return, live-region state and step-check responses, but it does not substitute for a screen reader. No OS/browser/screen-reader test session has been recorded; every manual box below stays unchecked. The results table remains reserved for real sessions.
 
 ### Implemented (Phase 3, `static/explorer_keys.js`)
 
@@ -25,12 +25,13 @@ Related: `docs/keyboard_guide.md` (what the keys should do), plan.md §6 (journe
 
 | Suite | Command | Result |
 |---|---|---|
-| Keyboard logic and DOM adapter (fake DOM) | `node --test tests/js/` | 86 passed, 0 failed (last run after merging `main`, 12 November 2026) |
-| Explorer, real-parser integration and fixture drift guard | `pytest tests/test_explore.py tests/test_parser_integration_explorer.py tests/test_explorer_keys_fixture.py` | 1381 collected (1328 + 52 + 1); the full `pytest` run on the merged tree was 1847 passed, 1 failed, the failure being Member 2/3's `tests/test_cli.py` (not in Member 4's files) |
+| API, parser, explorer and backend regression suite | `python -m pytest -q` | 1880 passed, 0 failed on 13 November 2026 |
+| Keyboard logic and DOM adapter (fake DOM) | `node --test tests/js/explorer_keys.test.js` | 87 passed, 0 failed on 13 November 2026 |
+| Browser integration (Chromium, local FastAPI server) | Playwright interaction checks | Parser-generated tree, node-specific Space/I/C/R, full `?` help and Repeat, Stop/cancel, Home/Escape/re-entry, parse error, valid/invalid step responses, and 390px viewport checked. Real SpeechSynthesis emitted start/end for the short node announcement; the long help utterance started but was cancelled before completion. Physical audio was not captured. This is not a screen-reader test. |
 
 The JS tests run against a hand-written fake DOM, not a browser. The fake fires events the way the DOM does (bubbling, no `focusin` when already focused), but it cannot show real focus, scrolling, live-region or `speechSynthesis` behaviour. They prove the logic and the attributes set. They do not prove how a browser or screen reader behaves.
 
-### Still needs manual verification (needs Member 5's page)
+### Still needs manual verification (screen reader required)
 
 Everything in sections 1 to 8 below, in particular keyboard_guide T1 to T14. The riskiest ones: focus-mode switching (T1), Esc handling (T5), Space and letter keys in browse mode (T4), single announcement of live-region text (T8), screen reader versus page speech (T9).
 
@@ -48,12 +49,11 @@ Everything in sections 1 to 8 below, in particular keyboard_guide T1 to T14. The
 
 ### Known limitations
 
-- Not tested in any browser or screen reader (see above).
+- Not tested with NVDA or Orca; automated Chromium checks do not verify actual assistive-technology speech (see above).
 - `createView` assumes the tree is fully expanded (guide A5).
-- `speechSynthesis` use is injected by the page; the choice between modes is open question Q1 (Member 5).
+- The page provides an explicit screen-reader / browser-speech mode selector; the page cannot detect whether a screen reader is running, so the student must choose the appropriate mode.
 - Selection styling and focus outline are CSS work for Member 5; the module only sets `data-selected`.
-- The 12 November 2026 numbers above are from the merged working tree (merge staged, not committed).
-- The keyboard module's JS fixtures (`tests/js/explorer_trees.json`) come from hand-written ASTs that match the real parser's output (checked by `tests/test_parser_integration_explorer.py`). Real parser output has been run through `build_explorer_tree` in Python only; nothing was explored in a browser.
+- The keyboard module's JS fixtures (`tests/js/explorer_trees.json`) come from hand-written ASTs that match the real parser's output (checked by `tests/test_parser_integration_explorer.py`). The browser integration check also explored trees returned by the real parse API.
 - AltGr handling relies on `getModifierState("AltGraph")`. Real Ctrl+Alt combinations on AltGr layouts may also report AltGraph, so shortcut pass-through is not guaranteed there. Not verified across real browsers and keyboard layouts. Letter keys I, C, R match the typed character, so they do not work on layouts that do not produce those letters.
 - Chrome is reported to sometimes drop an utterance spoken straight after `speechSynthesis.cancel()` (speech mode only). Unverified here.
 - In screen-reader mode, opening and leaving the explorer both move focus and write the live region, so a screen reader may speak the focus change and the live text one after the other (or cut one off). Needs checking with NVDA and Orca.

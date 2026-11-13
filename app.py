@@ -19,6 +19,7 @@ from engine.explore import build_explorer_tree
 from engine.infer import infer_operation
 from engine.mistakes import detect_mistake
 from engine.parser import ParseError, parse
+from engine.speak import to_words
 from engine.verifier import verify_step
 
 
@@ -43,6 +44,13 @@ app.add_middleware(
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+def _add_group_quick_text(explorer_node: dict[str, Any], ast_node: Any) -> None:
+	if ast_node.type == "Group":
+		explorer_node["spoken_quick"] = f"Group containing {to_words(ast_node.children[0])}"
+	for explorer_child, ast_child in zip(explorer_node["children"], ast_node.children):
+		_add_group_quick_text(explorer_child, ast_child)
 
 
 def _extract_text(payload: Any, *names: str) -> str:
@@ -164,7 +172,9 @@ async def parse_expression(request: Request) -> dict[str, Any]:
 	except ValueError as exc:
 		raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-	return build_explorer_tree(ast.to_dict())
+	tree = build_explorer_tree(ast.to_dict())
+	_add_group_quick_text(tree, ast)
+	return tree
 
 
 @app.get("/")

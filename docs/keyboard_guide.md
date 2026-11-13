@@ -5,7 +5,7 @@ Source of truth: plan.md §7.6 (explorer) and §7.8 (page). This file turns thos
 
 `docs/contracts.md` (Member 2) is the authoritative shared contract for the AST and the ExplorerNode. `docs/explorer_contract.md` (Member 4) records how the explorer reads it, the role vocabulary and the parser checklist for A8–A16.
 
-**Status (Phase 3):** the explorer (`engine/explore.py`) has been run on the real parser's output (`tests/test_parser_integration_explorer.py`); the key logic is implemented in `static/explorer_keys.js` and covered by automated tests (section 9). It is not yet wired into the page and **nothing here has been tested with NVDA or Orca**. Section 7 lists what still has to be tested with real screen readers. Statements about screen-reader behaviour in sections 5 and 6 are design intent or expectations, marked as such.
+**Status (Phase 3):** the explorer (`engine/explore.py`) has been run on the real parser's output (`tests/test_parser_integration_explorer.py`); the key logic is implemented in `static/explorer_keys.js`, covered by automated tests (section 9), and wired into the page through the real parse API. Browser keyboard and focus checks have been performed, but **nothing here has been manually tested with NVDA or Orca**. Section 7 lists what still has to be tested with real screen readers. Statements about screen-reader behaviour in sections 5 and 6 remain design intent or expectations until those sessions happen.
 
 ## 1. Mathematical node roles
 
@@ -96,9 +96,11 @@ On a part that is an only child, ← and → both say "This is the only part at 
 
 ## 4. `?` help text
 
-Spoken and shown as a list, in this order:
+Spoken and shown as a list, in this order. The help begins by identifying the
+Expression Explorer, then names every implemented key; the question-mark item
+explains that it repeats this list:
 
-> Up arrow: move to the bigger part. Down arrow: move inside. Left and right arrows: previous and next part at the same level. Space: hear this part. I: more information. C: how this part connects to the rest. R: read the whole equation again. Home: back to the whole equation. Escape: leave the explorer.
+> Expression explorer. Here are the available keyboard controls. Arrow Up: move to the parent expression. Arrow Down: move to the first child. Arrow Left: move to the previous sibling. Arrow Right: move to the next sibling. Space: hear this part. I: hear a detailed explanation of this part. C: hear how this part connects to the rest. R: read the whole equation again. Home: return to the whole equation. Question mark: hear these keyboard controls again. Escape: leave the explorer.
 
 The help is also available as visible text (not only speech) so it works with no speech at all.
 
@@ -248,7 +250,7 @@ For teammates to confirm. `docs/contracts.md` is the authoritative shared contra
 
 ## 9. Implementation (Phase 3)
 
-File: `static/explorer_keys.js` (Member 4). `static/app.js`, `index.html` and `style.css` are unchanged and remain Member 5's. The module has no dependencies and works as `window.ExplorerKeys` or `require()`.
+File: `static/explorer_keys.js` (Member 4). Member 5 integrates it from `static/app.js`, `index.html` and `style.css`. The module has no dependencies and works as `window.ExplorerKeys` or `require()`.
 
 ### Integration interface for Member 5
 
